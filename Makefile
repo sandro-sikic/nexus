@@ -9,8 +9,18 @@ VERSION    = $(shell git describe --tags --always --dirty 2>/dev/null || echo de
 COMMIT     = $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 BUILD_TIME = $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
 
-DIST_DIR   := dist
-MAIN_PKG   := .
+DIST_DIR := dist
+MAIN_PKG := .
+
+# ── Platform detection ────────────────────────────────────────────────────────
+# go env GOOS is the only reliable cross-platform way to detect Windows here.
+ifeq ($(shell go env GOOS),windows)
+  MKDIR = cmd /c if not exist "$(DIST_DIR)" mkdir "$(DIST_DIR)"
+  RM    = cmd /c if exist "$(DIST_DIR)" rmdir /s /q "$(DIST_DIR)"
+else
+  MKDIR = mkdir -p $(DIST_DIR)
+  RM    = rm -rf $(DIST_DIR)
+endif
 
 LDFLAGS = -s -w \
 	-X '$(MODULE)/internal/version.Version=$(VERSION)' \
@@ -44,13 +54,13 @@ endef
 
 .PHONY: build
 build: ## Build for the current platform → dist/
-	@mkdir -p $(DIST_DIR)
+	@$(MKDIR)
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY)$(shell go env GOEXE) $(MAIN_PKG)
 	@echo "Built → $(DIST_DIR)/$(BINARY)$(shell go env GOEXE)"
 
 .PHONY: build-all
 build-all: ## Cross-compile for all platforms → dist/
-	@mkdir -p $(DIST_DIR)
+	@$(MKDIR)
 	@$(foreach PLATFORM,$(PLATFORMS), \
 		$(eval OS   := $(word 1,$(subst /, ,$(PLATFORM)))) \
 		$(eval ARCH := $(word 2,$(subst /, ,$(PLATFORM)))) \
@@ -63,19 +73,19 @@ build-all: ## Cross-compile for all platforms → dist/
 
 .PHONY: build-linux
 build-linux: ## Build Linux amd64 + arm64 binaries
-	@mkdir -p $(DIST_DIR)
+	@$(MKDIR)
 	GOOS=linux GOARCH=amd64  $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_linux_amd64  $(MAIN_PKG)
 	GOOS=linux GOARCH=arm64  $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_linux_arm64  $(MAIN_PKG)
 
 .PHONY: build-darwin
 build-darwin: ## Build macOS amd64 + arm64 (Apple Silicon) binaries
-	@mkdir -p $(DIST_DIR)
+	@$(MKDIR)
 	GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_darwin_amd64 $(MAIN_PKG)
 	GOOS=darwin GOARCH=arm64 $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_darwin_arm64 $(MAIN_PKG)
 
 .PHONY: build-windows
 build-windows: ## Build Windows amd64 binary
-	@mkdir -p $(DIST_DIR)
+	@$(MKDIR)
 	GOOS=windows GOARCH=amd64 $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_windows_amd64.exe $(MAIN_PKG)
 
 # ── Test ──────────────────────────────────────────────────────────────────────
@@ -90,14 +100,14 @@ test-verbose: ## Run all tests with verbose output
 
 .PHONY: test-cover
 test-cover: ## Run tests and open HTML coverage report
-	@mkdir -p $(DIST_DIR)
+	@$(MKDIR)
 	$(GOTEST) -race -coverprofile=$(DIST_DIR)/coverage.out ./...
 	$(GO) tool cover -html=$(DIST_DIR)/coverage.out -o $(DIST_DIR)/coverage.html
 	@echo "Coverage report → $(DIST_DIR)/coverage.html"
 
 .PHONY: test-cover-summary
 test-cover-summary: ## Print per-package coverage summary
-	@mkdir -p $(DIST_DIR)
+	@$(MKDIR)
 	$(GOTEST) -race -coverprofile=$(DIST_DIR)/coverage.out ./...
 	$(GO) tool cover -func=$(DIST_DIR)/coverage.out
 
@@ -131,7 +141,7 @@ deps: ## Download all dependencies
 
 .PHONY: clean
 clean: ## Remove the dist/ directory
-	rm -rf $(DIST_DIR)
+	@$(RM)
 	@echo "Cleaned $(DIST_DIR)/"
 
 # ── Run (dev shortcut) ────────────────────────────────────────────────────────
