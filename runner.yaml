@@ -1,0 +1,69 @@
+# runner.yaml — example configuration
+#
+# ui_mode: list | fuzzy | group
+# run_mode: stream | handoff | background
+#
+# Per-command run_mode overrides the top-level default.
+
+title: "My Project Runner"
+ui_mode: group        # show commands organized by group
+run_mode: stream      # default: stream output inside the TUI
+
+commands:
+  # ── Development ──────────────────────────────────────────
+  - name: Dev Server
+    description: Start the development server with hot reload
+    command: "npm run dev"
+    group: Development
+    run_mode: handoff   # hand off terminal; Ctrl+C works normally
+
+  - name: Watch Tests
+    description: Run tests in watch mode
+    command: "npm run test:watch"
+    group: Development
+    run_mode: stream
+
+  - name: Type Check
+    description: Run TypeScript type checker
+    command: "npm run typecheck"
+    group: Development
+
+  # ── Build ────────────────────────────────────────────────
+  - name: Build
+    description: Production build
+    command: "npm run build"
+    group: Build
+
+  - name: Preview
+    description: Preview the production build locally
+    command: "npm run preview"
+    group: Build
+    run_mode: handoff
+
+  # ── Quality ──────────────────────────────────────────────
+  - name: Lint
+    description: Run ESLint across the project
+    command: "npm run lint"
+    group: Quality
+
+  - name: Format
+    description: Format code with Prettier
+    command: "npm run format"
+    group: Quality
+
+  # ── Utilities ────────────────────────────────────────────
+  - name: Install Deps
+    description: Install / update npm dependencies
+    command: "npm install"
+    group: Utilities
+
+  - name: Clean
+    description: Remove build artifacts and node_modules
+    command: "rm -rf dist node_modules"
+    group: Utilities
+
+  - name: Background Logger
+    description: Demo background process (pings localhost)
+    command: "ping -n 10 127.0.0.1"
+    group: Utilities
+    run_mode: background
