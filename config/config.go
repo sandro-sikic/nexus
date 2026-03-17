@@ -1,11 +1,15 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrNotFound is returned by Load when the config file does not exist.
+var ErrNotFound = errors.New("config file not found")
 
 // UIMode controls how commands are presented.
 type UIMode string
@@ -43,10 +47,25 @@ type Config struct {
 	Commands []Command `yaml:"commands"`
 }
 
+// Write serialises cfg to a YAML file at path, creating it if necessary.
+func Write(path string, cfg *Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshalling config: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+	return nil
+}
+
 // Load reads and parses a YAML config file.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, path)
+		}
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 

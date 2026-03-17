@@ -1,20 +1,24 @@
 # ── Config ────────────────────────────────────────────────────────────────────
-BINARY     := runner
-MODULE     := $(shell go list -m)
-VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
-BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+BINARY := runner
+MODULE := runner
+
+# Use = (recursive) instead of := (immediate) so these are evaluated only when
+# a build target actually runs, never at parse time.  This prevents hangs when
+# git or date are slow / missing on the current PATH.
+VERSION    = $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT     = $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+BUILD_TIME = $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
 
 DIST_DIR   := dist
 MAIN_PKG   := .
 
-LDFLAGS := -s -w \
+LDFLAGS = -s -w \
 	-X '$(MODULE)/internal/version.Version=$(VERSION)' \
 	-X '$(MODULE)/internal/version.Commit=$(COMMIT)' \
 	-X '$(MODULE)/internal/version.BuildTime=$(BUILD_TIME)'
 
 GO      := go
-GOBUILD := $(GO) build -trimpath -ldflags "$(LDFLAGS)"
+GOBUILD  = $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 GOTEST  := $(GO) test
 GOVET   := $(GO) vet
 
@@ -41,8 +45,8 @@ endef
 .PHONY: build
 build: ## Build for the current platform → dist/
 	@mkdir -p $(DIST_DIR)
-	$(GOBUILD) -o $(DIST_DIR)/$(BINARY)$(if $(filter windows,$(shell go env GOOS)),.exe,) $(MAIN_PKG)
-	@echo "Built → $(DIST_DIR)/$(BINARY)"
+	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY)$(shell go env GOEXE) $(MAIN_PKG)
+	@echo "Built → $(DIST_DIR)/$(BINARY)$(shell go env GOEXE)"
 
 .PHONY: build-all
 build-all: ## Cross-compile for all platforms → dist/
