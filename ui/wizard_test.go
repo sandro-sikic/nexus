@@ -62,6 +62,48 @@ func pressSpace(t *testing.T, m WizardModel) WizardModel {
 	return updateWiz(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
 }
 
+// pressRune sends a single rune keystroke (e.g. 'e', 'a', 's', 'd').
+func pressRune(t *testing.T, m WizardModel, r rune) WizardModel {
+	t.Helper()
+	return updateWiz(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+}
+
+// hubEditSettings presses 'e' on the hub to enter the edit-general-settings sub-flow.
+func hubEditSettings(t *testing.T, m WizardModel) WizardModel {
+	t.Helper()
+	if m.step != wizStepEditHub {
+		t.Fatalf("hubEditSettings: expected wizStepEditHub, got %d", m.step)
+	}
+	return pressRune(t, m, 'e')
+}
+
+// hubAddCommand presses 'a' on the hub to enter the add-command sub-flow.
+func hubAddCommand(t *testing.T, m WizardModel) WizardModel {
+	t.Helper()
+	if m.step != wizStepEditHub {
+		t.Fatalf("hubAddCommand: expected wizStepEditHub, got %d", m.step)
+	}
+	return pressRune(t, m, 'a')
+}
+
+// hubSave presses 's' on the hub to go to the summary/save screen.
+func hubSave(t *testing.T, m WizardModel) WizardModel {
+	t.Helper()
+	if m.step != wizStepEditHub {
+		t.Fatalf("hubSave: expected wizStepEditHub, got %d", m.step)
+	}
+	return pressRune(t, m, 's')
+}
+
+// hubDeleteMarked presses 'd' on the hub to delete all marked commands.
+func hubDeleteMarked(t *testing.T, m WizardModel) WizardModel {
+	t.Helper()
+	if m.step != wizStepEditHub {
+		t.Fatalf("hubDeleteMarked: expected wizStepEditHub, got %d", m.step)
+	}
+	return pressRune(t, m, 'd')
+}
+
 // confirmDelete presses enter on the delete step, confirming the current marks
 // (which may be empty — no deletions).
 func confirmDelete(t *testing.T, m WizardModel) WizardModel {
@@ -166,8 +208,10 @@ func addCommand(t *testing.T, m WizardModel, name, desc, command, dir, group str
 	}
 	m = pressEnter(t, m)
 
-	if m.step != wizStepAddAnother {
-		t.Fatalf("expected wizStepAddAnother, got %d", m.step)
+	// After CmdRunMode, we land on wizStepAddAnother (create flow) or
+	// wizStepEditHub (edit flow, returnToHub=true). Both are valid endings.
+	if m.step != wizStepAddAnother && m.step != wizStepEditHub {
+		t.Fatalf("expected wizStepAddAnother or wizStepEditHub, got %d", m.step)
 	}
 	return m
 }
@@ -1108,9 +1152,12 @@ func TestNewWizardFromConfig_EditingFlag(t *testing.T) {
 func TestNewWizardFromConfig_PrePopulatesTitle(t *testing.T) {
 	cfg := &config.Config{Title: "Pre-filled", UIMode: config.UIModeList, RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
-	// inputBuf is seeded when the Welcome step advances (not at construction),
-	// so confirm welcome first and then check the title step's buffer.
-	m = pressEnter(t, m)
+	// In edit mode, press 'e' from the hub to reach the title step.
+	// The inputBuf is seeded with the existing title.
+	m = hubEditSettings(t, m)
+	if m.step != wizStepTitle {
+		t.Fatalf("expected wizStepTitle after 'e', got %d", m.step)
+	}
 	if m.inputBuf != "Pre-filled" {
 		t.Errorf("inputBuf on title step: got %q, want Pre-filled", m.inputBuf)
 	}
@@ -1153,15 +1200,15 @@ func TestNewWizardFromConfig_CopiesCommands(t *testing.T) {
 	}
 }
 
-func TestNewWizardFromConfig_StartsAtWelcome(t *testing.T) {
+func TestNewWizardFromConfig_StartsAtHub(t *testing.T) {
 	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
-	if m.step != wizStepWelcome {
-		t.Errorf("initial step: got %d, want wizStepWelcome", m.step)
+	if m.step != wizStepEditHub {
+		t.Errorf("edit mode should start at wizStepEditHub, got %d", m.step)
 	}
 }
 
-func TestWizardEdit_WelcomeViewMentionsEdit(t *testing.T) {
+func TestWizardEdit_HubViewMentionsEdit(t *testing.T) {
 	cfg := &config.Config{
 		Title:    "My App",
 		UIMode:   config.UIModeList,
@@ -1171,10 +1218,10 @@ func TestWizardEdit_WelcomeViewMentionsEdit(t *testing.T) {
 	m := NewWizardFromConfig("out.yaml", cfg)
 	v := m.View()
 	if strings.Contains(v, "No runner.yaml") {
-		t.Error("edit welcome should not say 'No runner.yaml found'")
+		t.Error("hub should not say 'No runner.yaml found'")
 	}
-	if !strings.Contains(v, "Edit") && !strings.Contains(v, "edit") && !strings.Contains(v, "update") {
-		t.Errorf("edit welcome should mention editing:\n%s", v)
+	if !strings.Contains(v, "Edit") && !strings.Contains(v, "edit") {
+		t.Errorf("hub view should mention editing:\n%s", v)
 	}
 }
 
@@ -1182,8 +1229,8 @@ func TestWizardEdit_TitlePreFilledAndConfirmable(t *testing.T) {
 	cfg := &config.Config{Title: "Original", UIMode: config.UIModeList, RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
 
-	// Welcome → Title
-	m = pressEnter(t, m)
+	// Hub → 'e' → Title step (inputBuf pre-filled with existing title)
+	m = hubEditSettings(t, m)
 	if m.inputBuf != "Original" {
 		t.Errorf("inputBuf on title step: got %q, want Original", m.inputBuf)
 	}
@@ -1201,7 +1248,7 @@ func TestWizardEdit_TitlePreFilledAndConfirmable(t *testing.T) {
 func TestWizardEdit_TitleCanBeReplaced(t *testing.T) {
 	cfg := &config.Config{Title: "Old", UIMode: config.UIModeList, RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
-	m = pressEnter(t, m) // welcome
+	m = hubEditSettings(t, m) // hub → 'e' → title step (pre-filled "Old")
 
 	// Clear the existing value and type a new one.
 	for range []rune("Old") {
@@ -1218,8 +1265,8 @@ func TestWizardEdit_TitleCanBeReplaced(t *testing.T) {
 func TestWizardEdit_UIModePreselected(t *testing.T) {
 	cfg := &config.Config{Title: "T", UIMode: config.UIModeFuzzy, RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
-	m = pressEnter(t, m) // welcome
-	m = pressEnter(t, m) // confirm title → moves to UIMode
+	m = hubEditSettings(t, m) // hub → 'e' → title step
+	m = pressEnter(t, m)      // confirm title → UIMode step
 
 	// optCursor should point at "fuzzy" (index 1)
 	if m.optCursor != 1 {
@@ -1230,9 +1277,9 @@ func TestWizardEdit_UIModePreselected(t *testing.T) {
 func TestWizardEdit_RunModePreselected(t *testing.T) {
 	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeBackground}
 	m := NewWizardFromConfig("out.yaml", cfg)
-	m = pressEnter(t, m) // welcome
-	m = pressEnter(t, m) // title
-	m = pressEnter(t, m) // confirm UIMode → moves to RunMode
+	m = hubEditSettings(t, m) // hub → 'e' → title step
+	m = pressEnter(t, m)      // confirm title → UIMode step
+	m = pressEnter(t, m)      // confirm UIMode → RunMode step
 
 	// optCursor should point at "background" (index 2)
 	if m.optCursor != 2 {
@@ -1247,18 +1294,19 @@ func TestWizardEdit_ExistingCommandsCarriedToSummary(t *testing.T) {
 	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream, Commands: existing}
 	m := NewWizardFromConfig("out.yaml", cfg)
 
-	// Drive through global steps without adding a new command.
-	m = pressEnter(t, m) // welcome
-	m = pressEnter(t, m) // title (keep)
-	m = pressEnter(t, m) // UIMode (keep list)
-	m = pressEnter(t, m) // RunMode (keep stream) → wizStepCmdName
-
-	// Add one new command then say No.
+	// From the hub, add a new command via 'a', then save via 's'.
+	m = hubAddCommand(t, m)
+	if m.step != wizStepCmdName {
+		t.Fatalf("expected wizStepCmdName after 'a', got %d", m.step)
+	}
 	m = addCommand(t, m, "NewCmd", "", "echo new", "", "", 0)
-	m = pressDown(t, m)     // no
-	m = pressEnter(t, m)    // → delete step
-	m = confirmDelete(t, m) // → summary (no deletions)
 
+	// After addCommand in edit mode, returnToHub=true so we land back on hub.
+	if m.step != wizStepEditHub {
+		t.Fatalf("expected wizStepEditHub after adding command, got %d", m.step)
+	}
+
+	m = hubSave(t, m) // 's' → summary
 	if m.step != wizStepSummary {
 		t.Fatalf("expected wizStepSummary, got %d", m.step)
 	}
@@ -1301,27 +1349,32 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	// Run the edit wizard, change the title, keep everything else, no new commands.
 	m := NewWizardFromConfig(tmp, initial)
-	m = pressEnter(t, m) // welcome
 
-	// Replace title
+	// Edit general settings: change title to "Updated".
+	m = hubEditSettings(t, m) // hub → 'e' → title step (pre-filled "Initial")
 	for range []rune("Initial") {
 		m = pressBackspace(t, m)
 	}
 	m = typeText(t, m, "Updated")
-	m = pressEnter(t, m) // title confirmed
-	m = pressEnter(t, m) // UIMode (list)
-	m = pressEnter(t, m) // RunMode (stream) → CmdName
+	m = pressEnter(t, m) // confirm title → UIMode
+	m = pressEnter(t, m) // confirm UIMode → RunMode
+	m = pressEnter(t, m) // confirm RunMode → back to hub
 
-	// Add no new commands: pick No at the very first AddAnother.
-	// But we must go through at least one command sub-flow because the wizard
-	// always asks for at least one command. Add a minimal extra command.
+	if m.step != wizStepEditHub {
+		t.Fatalf("expected wizStepEditHub after settings edit, got %d", m.step)
+	}
+
+	// Add a new command.
+	m = hubAddCommand(t, m)
 	m = addCommand(t, m, "Extra", "", "echo extra", "", "", 0)
-	m = pressDown(t, m)     // No
-	m = pressEnter(t, m)    // → delete step
-	m = confirmDelete(t, m) // → summary (no deletions)
-	m = pressEnter(t, m)    // → save → done
+	if m.step != wizStepEditHub {
+		t.Fatalf("expected wizStepEditHub after adding command, got %d", m.step)
+	}
+
+	// Save.
+	m = hubSave(t, m)    // → summary
+	m = pressEnter(t, m) // → save → done
 
 	if m.saveErr != "" {
 		t.Fatalf("save error: %s", m.saveErr)
@@ -1341,6 +1394,276 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 	// Original command + new extra command
 	if len(loaded.Commands) != 2 {
 		t.Errorf("commands: got %d, want 2", len(loaded.Commands))
+	}
+}
+
+// ── Edit hub tests ────────────────────────────────────────────────────────────
+
+func TestEditHub_InitialStep(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	if m.step != wizStepEditHub {
+		t.Errorf("expected wizStepEditHub, got %d", m.step)
+	}
+}
+
+func TestEditHub_ViewContainsSettingsSummary(t *testing.T) {
+	cfg := &config.Config{Title: "MyApp", UIMode: config.UIModeFuzzy, RunMode: config.RunModeHandoff,
+		Commands: []config.Command{{Name: "Build", Command: "make build", RunMode: config.RunModeStream}},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	v := m.View()
+	for _, want := range []string{"MyApp", "fuzzy", "handoff", "Build"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("hub view missing %q:\n%s", want, v)
+		}
+	}
+}
+
+func TestEditHub_ViewContainsActionMenu(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	v := m.View()
+	for _, want := range []string{"[d]", "[e]", "[a]", "[s]"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("hub view missing action key %q:\n%s", want, v)
+		}
+	}
+}
+
+func TestEditHub_DeleteMarksInitialisedFalse(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "A", Command: "a", RunMode: config.RunModeStream},
+			{Name: "B", Command: "b", RunMode: config.RunModeStream},
+		},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	for i, marked := range m.deleteMarks {
+		if marked {
+			t.Errorf("deleteMarks[%d] should be false initially", i)
+		}
+	}
+}
+
+func TestEditHub_SpaceTogglesDeleteMark(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "A", Command: "a", RunMode: config.RunModeStream},
+			{Name: "B", Command: "b", RunMode: config.RunModeStream},
+		},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = pressSpace(t, m) // toggle A (cursor=0)
+	if !m.deleteMarks[0] {
+		t.Error("space should mark command at cursor")
+	}
+	m = pressSpace(t, m) // toggle again
+	if m.deleteMarks[0] {
+		t.Error("second space should unmark command")
+	}
+}
+
+func TestEditHub_DownMovesCommandCursor(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "A", Command: "a", RunMode: config.RunModeStream},
+			{Name: "B", Command: "b", RunMode: config.RunModeStream},
+		},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	if m.optCursor != 0 {
+		t.Errorf("initial cursor: got %d, want 0", m.optCursor)
+	}
+	m = pressDown(t, m)
+	if m.optCursor != 1 {
+		t.Errorf("after down: cursor = %d, want 1", m.optCursor)
+	}
+	m = pressUp(t, m)
+	if m.optCursor != 0 {
+		t.Errorf("after up: cursor = %d, want 0", m.optCursor)
+	}
+}
+
+func TestEditHub_DeleteMarkedRemovesCommand(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "Keep", Command: "echo keep", RunMode: config.RunModeStream},
+			{Name: "Gone", Command: "echo gone", RunMode: config.RunModeStream},
+		},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = pressDown(t, m)       // cursor → Gone (index 1)
+	m = pressSpace(t, m)      // mark Gone
+	m = hubDeleteMarked(t, m) // 'd' → delete
+	if len(m.commands) != 1 {
+		t.Fatalf("commands after delete: got %d, want 1", len(m.commands))
+	}
+	if m.commands[0].Name != "Keep" {
+		t.Errorf("wrong command remaining: %q", m.commands[0].Name)
+	}
+	if m.step != wizStepEditHub {
+		t.Errorf("should stay on hub after delete, got %d", m.step)
+	}
+}
+
+func TestEditHub_DeleteAllMarkedIsRejected(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "Only", Command: "echo only", RunMode: config.RunModeStream},
+		},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = pressSpace(t, m)      // mark the only command
+	m = hubDeleteMarked(t, m) // 'd' → should be rejected
+	if m.validErr == "" {
+		t.Error("should show validation error when deleting all commands")
+	}
+	if len(m.commands) != 1 {
+		t.Errorf("commands should be unchanged, got %d", len(m.commands))
+	}
+}
+
+func TestEditHub_DeleteNoneMarkedShowsError(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "A", Command: "a", RunMode: config.RunModeStream},
+		},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = hubDeleteMarked(t, m) // 'd' with nothing marked
+	if m.validErr == "" {
+		t.Error("should show error when no commands are marked")
+	}
+}
+
+func TestEditHub_EditSettingsReturnsToHub(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = hubEditSettings(t, m) // hub → 'e' → title
+	m = pressEnter(t, m)      // confirm title → UIMode
+	m = pressEnter(t, m)      // confirm UIMode → RunMode
+	m = pressEnter(t, m)      // confirm RunMode → back to hub
+	if m.step != wizStepEditHub {
+		t.Errorf("after editing settings, should return to hub, got %d", m.step)
+	}
+}
+
+func TestEditHub_AddCommandReturnsToHub(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = hubAddCommand(t, m)
+	m = addCommand(t, m, "B", "", "echo b", "", "", 0)
+	if m.step != wizStepEditHub {
+		t.Errorf("after adding command, should return to hub, got %d", m.step)
+	}
+	if len(m.commands) != 2 {
+		t.Errorf("commands: got %d, want 2", len(m.commands))
+	}
+}
+
+func TestEditHub_SaveGoesToSummary(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = hubSave(t, m) // 's' → summary
+	if m.step != wizStepSummary {
+		t.Errorf("after 's', expected wizStepSummary, got %d", m.step)
+	}
+}
+
+func TestEditHub_DeleteMarksGrowAfterAddCommand(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	if len(m.deleteMarks) != 1 {
+		t.Fatalf("initial deleteMarks len: got %d, want 1", len(m.deleteMarks))
+	}
+	m = hubAddCommand(t, m)
+	m = addCommand(t, m, "B", "", "echo b", "", "", 0)
+	if len(m.deleteMarks) != 2 {
+		t.Errorf("deleteMarks len after add: got %d, want 2", len(m.deleteMarks))
+	}
+}
+
+func TestEditHub_DeleteMarksResetAfterBulkDelete(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "A", Command: "a", RunMode: config.RunModeStream},
+			{Name: "B", Command: "b", RunMode: config.RunModeStream},
+		},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = pressSpace(t, m)      // mark A (cursor=0)
+	m = hubDeleteMarked(t, m) // delete A, leaving B
+	if len(m.deleteMarks) != 1 {
+		t.Errorf("deleteMarks after delete: got len %d, want 1", len(m.deleteMarks))
+	}
+	if m.deleteMarks[0] {
+		t.Error("remaining command should not be marked")
+	}
+}
+
+func TestEditHub_CursorClampsAfterDelete(t *testing.T) {
+	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "A", Command: "a", RunMode: config.RunModeStream},
+			{Name: "B", Command: "b", RunMode: config.RunModeStream},
+		},
+	}
+	m := NewWizardFromConfig("out.yaml", cfg)
+	m = pressDown(t, m)       // cursor → 1 (B)
+	m = pressSpace(t, m)      // mark B
+	m = hubDeleteMarked(t, m) // delete B; only A remains → cursor must clamp to 0
+	if m.optCursor != 0 {
+		t.Errorf("cursor should clamp to 0 after delete, got %d", m.optCursor)
+	}
+}
+
+func TestEditHub_SaveAndVerifyFile(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "runner.yaml")
+	existing := &config.Config{
+		Title:   "Orig",
+		UIMode:  config.UIModeList,
+		RunMode: config.RunModeStream,
+		Commands: []config.Command{
+			{Name: "Keep", Command: "echo keep", RunMode: config.RunModeStream},
+			{Name: "Drop", Command: "echo drop", RunMode: config.RunModeStream},
+		},
+	}
+	if err := config.Write(tmp, existing); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	m := NewWizardFromConfig(tmp, existing)
+	// Mark "Drop" (index 1) and delete it.
+	m = pressDown(t, m)
+	m = pressSpace(t, m)
+	m = hubDeleteMarked(t, m)
+	// Save.
+	m = hubSave(t, m)    // → summary
+	m = pressEnter(t, m) // → save → done
+
+	if m.saveErr != "" {
+		t.Fatalf("save error: %s", m.saveErr)
+	}
+
+	loaded, err := config.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(loaded.Commands) != 1 || loaded.Commands[0].Name != "Keep" {
+		t.Errorf("saved file has wrong commands: %+v", loaded.Commands)
 	}
 }
 
