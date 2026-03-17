@@ -377,6 +377,131 @@ func TestBackgroundModel_ViewRendersLines(t *testing.T) {
 	}
 }
 
+// ── OutputModel.View: multi-step command display ───────────────────────────────
+
+func TestOutputModel_ViewMultiStepShowsAllSteps(t *testing.T) {
+	c := config.Command{
+		Name:     "MultiStepCmd",
+		Commands: []string{"npm install", "npm run build"},
+		RunMode:  config.RunModeStream,
+	}
+	m := NewOutputModel(c)
+	v := m.View()
+	if !strings.Contains(v, "npm install") {
+		t.Errorf("view missing first step 'npm install':\n%s", v)
+	}
+	if !strings.Contains(v, "npm run build") {
+		t.Errorf("view missing second step 'npm run build':\n%s", v)
+	}
+	// Should render numbered step indicators like [1] and [2]
+	if !strings.Contains(v, "[1]") || !strings.Contains(v, "[2]") {
+		t.Errorf("view missing step numbers [1]/[2]:\n%s", v)
+	}
+}
+
+func TestOutputModel_ViewSingleStepDoesNotShowNumbered(t *testing.T) {
+	c := config.Command{Name: "Single", Command: "echo hi"}
+	m := NewOutputModel(c)
+	v := m.View()
+	// Single-step path should use "$ cmd" without numbered steps
+	if !strings.Contains(v, "$ echo hi") {
+		t.Errorf("single-step view should show '$ echo hi':\n%s", v)
+	}
+	if strings.Contains(v, "[1]") {
+		t.Errorf("single-step view should not show numbered step [1]:\n%s", v)
+	}
+}
+
+// ── BackgroundModel.Update: j/k scroll and auto-scroll ────────────────────────
+
+func TestBackgroundModel_ScrollUp_KKey(t *testing.T) {
+	m := BackgroundModel{offset: 3}
+	m, _ = m.Update(keyMsg("k"))
+	if m.offset != 2 {
+		t.Errorf("k key scroll up: offset = %d, want 2", m.offset)
+	}
+}
+
+func TestBackgroundModel_ScrollDown_JKey(t *testing.T) {
+	m := BackgroundModel{height: 10}
+	for i := 0; i < 10; i++ {
+		m.lines = append(m.lines, runner.LogLine{Text: "x"})
+	}
+	m, _ = m.Update(keyMsg("j"))
+	if m.offset != 1 {
+		t.Errorf("j key scroll down: offset = %d, want 1", m.offset)
+	}
+}
+
+func TestBackgroundModel_ScrollDownBounded(t *testing.T) {
+	m := BackgroundModel{height: 10}
+	for i := 0; i < 10; i++ {
+		m.lines = append(m.lines, runner.LogLine{Text: "x"})
+	}
+	// Scroll way past the end
+	for i := 0; i < 20; i++ {
+		m, _ = m.Update(arrowMsg(tea.KeyDown))
+	}
+	visible := m.height - 6
+	maxOffset := len(m.lines) - visible
+	if m.offset > maxOffset {
+		t.Errorf("scroll exceeded max: offset=%d, maxOffset=%d", m.offset, maxOffset)
+	}
+}
+
+func TestBackgroundModel_AutoScrollOnLineMessage(t *testing.T) {
+	m := BackgroundModel{height: 10} // visible = 10-6 = 4
+	ch := make(chan runner.LogLine, 20)
+
+	// Add enough lines to trigger auto-scroll
+	for i := 0; i < 10; i++ {
+		lineMsg := struct {
+			line  runner.LogLine
+			lines chan runner.LogLine
+		}{runner.LogLine{Text: "line"}, ch}
+		m, _ = m.Update(lineMsg)
+	}
+
+	visible := m.height - 6 // 4
+	expected := len(m.lines) - visible
+	if m.offset != expected {
+		t.Errorf("bg auto-scroll offset: got %d, want %d", m.offset, expected)
+	}
+}
+
+// ── BackgroundModel.View: multi-step display ──────────────────────────────────
+
+func TestBackgroundModel_ViewMultiStepShowsAllSteps(t *testing.T) {
+	m := BackgroundModel{
+		cmd: config.Command{
+			Name:     "BGMulti",
+			Commands: []string{"step-a", "step-b"},
+		},
+		height: 24,
+	}
+	v := m.View()
+	if !strings.Contains(v, "step-a") {
+		t.Errorf("bg view missing first step:\n%s", v)
+	}
+	if !strings.Contains(v, "step-b") {
+		t.Errorf("bg view missing second step:\n%s", v)
+	}
+	if !strings.Contains(v, "[1]") || !strings.Contains(v, "[2]") {
+		t.Errorf("bg multi-step view missing step numbers:\n%s", v)
+	}
+}
+
+// ── BackgroundModel.Update: DoneMsgWithError ──────────────────────────────────
+
+func TestBackgroundModel_DoneMsgSetsErrNotStored(t *testing.T) {
+	// BackgroundModel does not store err, just done=true; this verifies no panic.
+	m := BackgroundModel{}
+	m, _ = m.Update(outputDoneMsg{err: &testError{"bg-error"}})
+	if !m.done {
+		t.Error("outputDoneMsg with error should still set done=true")
+	}
+}
+
 // ── testError helper ─────────────────────────────────────────────────────────
 
 type testError struct{ msg string }

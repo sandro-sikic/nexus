@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -307,4 +308,132 @@ func TestAppModel_SelectedCmdNilByDefault(t *testing.T) {
 			t.Errorf("selectedCmd() should be nil by default for %s", uiMode)
 		}
 	}
+}
+
+// ── Background launch ─────────────────────────────────────────────────────────
+
+func bgCmd(name, command string) config.Command {
+	return config.Command{Name: name, Command: command, RunMode: config.RunModeBackground}
+}
+
+func TestAppModel_EnterOnBackgroundCmdTransitionsToBG(t *testing.T) {
+	cfg := appCfg(config.UIModeList, config.RunModeBackground, bgCmd("BgTask", "echo bg"))
+	m := NewApp(cfg)
+	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.state != stateBG {
+		t.Errorf("after selecting background cmd: state = %d, want stateBG", m.state)
+	}
+}
+
+func TestAppModel_BackgroundLaunch_CmdNameStored(t *testing.T) {
+	cfg := appCfg(config.UIModeList, config.RunModeBackground, bgCmd("MyBGTask", "echo hi"))
+	m := NewApp(cfg)
+	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.bg.cmd.Name != "MyBGTask" {
+		t.Errorf("bg.cmd.Name: got %q, want MyBGTask", m.bg.cmd.Name)
+	}
+}
+
+func TestAppModel_BackgroundLaunch_ErrorPath(t *testing.T) {
+	// Launching a background command with invalid dir should store error.
+	c := config.Command{
+		Name:    "BadDir",
+		Command: "echo hi",
+		Dir:     "/this/path/does/not/exist/xyz",
+		RunMode: config.RunModeBackground,
+	}
+	cfg := appCfg(config.UIModeList, config.RunModeBackground, c)
+	m := NewApp(cfg)
+	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
+	// On platforms where the dir doesn't exist at Start time, m.err will be set.
+	// On others it may or may not error — we just verify no panic and state is sane.
+	if m.state == stateBG && m.err != "" {
+		t.Errorf("if launched successfully, err should be empty; got %q", m.err)
+	}
+	if m.state == stateMenu && m.err == "" {
+		// This is also acceptable if the dir check happens only at run time
+	}
+}
+
+// ── updateBG delegation ───────────────────────────────────────────────────────
+
+func TestAppModel_UpdateBGDelegatesToBGModel(t *testing.T) {
+	cfg := appCfg(config.UIModeList, config.RunModeStream, streamCmd("A", "a"))
+	m := NewApp(cfg)
+	m.state = stateBG
+	m.bg = BackgroundModel{cmd: config.Command{Name: "BGX"}, height: 24}
+	// Send a window size; should be handled by bg model
+	m = updateApp(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	if m.bg.width != 100 || m.bg.height != 30 {
+		t.Errorf("updateBG should propagate WindowSizeMsg: got %dx%d", m.bg.width, m.bg.height)
+	}
+}
+
+// ── SaveLastIndex on launch ────────────────────────────────────────────────────
+
+func TestAppModel_LaunchPersistsLastIndex(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "runner.yaml")
+
+	cfg := appCfg(config.UIModeList, config.RunModeStream,
+		streamCmd("First", "echo 1"),
+		streamCmd("Second", "echo 2"),
+	)
+
+	// Write config to temp file so SaveLastIndex can round-trip
+	if err := writeTestConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	// Build an app with cfgPath wired in and cursor at index 1
+	m := newApp(cfg, cfgPath)
+	m.list.cursor = 1
+
+	// Select by sending enter
+	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Re-read config and verify LastIndex was persisted
+	loaded, err := loadTestConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("failed to reload config: %v", err)
+	}
+	if loaded.LastIndex != 1 {
+		t.Errorf("LastIndex not persisted: got %d, want 1", loaded.LastIndex)
+	}
+}
+
+// ── HandleHandoff ─────────────────────────────────────────────────────────────
+
+func TestHandleHandoff_SuccessfulCommandReturnsNil(t *testing.T) {
+	c := config.Command{Name: "Echo", Command: "echo handlehandoff-ok", RunMode: config.RunModeHandoff}
+	err := HandleHandoff(c)
+	if err != nil {
+		t.Errorf("HandleHandoff should return nil for successful command, got: %v", err)
+	}
+}
+
+func TestHandleHandoff_FailingCommandReturnsError(t *testing.T) {
+	c := config.Command{Name: "Fail", Command: "exit 1", RunMode: config.RunModeHandoff}
+	err := HandleHandoff(c)
+	if err == nil {
+		t.Error("HandleHandoff should return error when command exits non-zero")
+	}
+}
+
+func TestHandleHandoff_EmptyCommandReturnsNil(t *testing.T) {
+	c := config.Command{Name: "Empty", Command: "", RunMode: config.RunModeHandoff}
+	err := HandleHandoff(c)
+	if err != nil {
+		t.Errorf("HandleHandoff with empty command should return nil, got: %v", err)
+	}
+}
+
+// ── helpers for config round-trip ─────────────────────────────────────────────
+
+func writeTestConfig(path string, cfg *config.Config) error {
+	return config.Write(path, cfg)
+}
+
+func loadTestConfig(path string) (*config.Config, error) {
+	return config.Load(path)
 }

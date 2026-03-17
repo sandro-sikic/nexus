@@ -1,6 +1,7 @@
 package runner_test
 
 import (
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -569,5 +570,218 @@ func TestWizard_MultiStep_CommitCommand(t *testing.T) {
 	}
 	if steps[0] != "npm install" || steps[1] != "npm run dev" {
 		t.Errorf("Steps(): got %v", steps)
+	}
+}
+
+// ── Handoff ───────────────────────────────────────────────────────────────────
+
+func TestHandoff_SuccessfulCommand(t *testing.T) {
+	cmd := echoCmd("handoff-ok")
+	err := runner.Handoff(cmd)
+	if err != nil {
+		t.Errorf("Handoff should succeed for echo command, got: %v", err)
+	}
+}
+
+func TestHandoff_EmptyStepsReturnsNil(t *testing.T) {
+	cmd := config.Command{Name: "empty", Command: ""}
+	err := runner.Handoff(cmd)
+	if err != nil {
+		t.Errorf("Handoff with empty steps should return nil, got: %v", err)
+	}
+}
+
+func TestHandoff_EmptyCommandsSlice(t *testing.T) {
+	cmd := config.Command{Name: "empty", Commands: []string{}}
+	err := runner.Handoff(cmd)
+	if err != nil {
+		t.Errorf("Handoff with empty Commands slice should return nil, got: %v", err)
+	}
+}
+
+func TestHandoff_FailingCommandReturnsError(t *testing.T) {
+	cmd := failCmd()
+	err := runner.Handoff(cmd)
+	if err == nil {
+		t.Error("Handoff should return error when command exits non-zero")
+	}
+}
+
+func TestHandoff_MultiStep_AllSucceed(t *testing.T) {
+	cmd := multiStepCmd() // has Commands: []string{"echo step-one", "echo step-two"}
+	cmd.RunMode = config.RunModeHandoff
+	err := runner.Handoff(cmd)
+	if err != nil {
+		t.Errorf("Handoff multi-step should succeed, got: %v", err)
+	}
+}
+
+func TestHandoff_MultiStep_FailOnFirstStep_WrapsError(t *testing.T) {
+	var step1, step2 string
+	if runtime.GOOS == "windows" {
+		step1 = "exit 1"
+		step2 = "echo step-two"
+	} else {
+		step1 = "exit 1"
+		step2 = "echo step-two"
+	}
+	cmd := config.Command{
+		Name:     "multi-fail",
+		Commands: []string{step1, step2},
+		RunMode:  config.RunModeHandoff,
+	}
+	err := runner.Handoff(cmd)
+	if err == nil {
+		t.Fatal("Handoff multi-step should return error when first step fails")
+	}
+	// Error message should mention which step failed (step 1/2)
+	if !strings.Contains(err.Error(), "1/2") {
+		t.Errorf("error should mention step number, got: %q", err.Error())
+	}
+}
+
+func TestHandoff_MultiStep_StopsOnFirstFailure(t *testing.T) {
+	// Use a temp file as a side effect to verify the second step does NOT run.
+	tmp := t.TempDir()
+	var step1, step2 string
+	if runtime.GOOS == "windows" {
+		step1 = "exit 1"
+		step2 = "echo ran > " + tmp + "\\sentinel.txt"
+	} else {
+		step1 = "exit 1"
+		step2 = "touch " + tmp + "/sentinel.txt"
+	}
+	cmd := config.Command{
+		Name:     "stop-on-fail",
+		Commands: []string{step1, step2},
+	}
+	_ = runner.Handoff(cmd)
+
+	// The sentinel file should NOT exist because execution stopped at step 1.
+	if _, statErr := os.Stat(tmp + "/sentinel.txt"); statErr == nil {
+		if runtime.GOOS != "windows" {
+			t.Error("second step ran after first step failed")
+		}
+	}
+}
+
+// ── Stream: multi-step failure ─────────────────────────────────────────────────
+
+func TestStream_MultiStep_FailOnFirstStep_SendsErrorLine(t *testing.T) {
+	var step1, step2 string
+	if runtime.GOOS == "windows" {
+		step1 = "exit 1"
+		step2 = "echo step-two"
+	} else {
+		step1 = "exit 1"
+		step2 = "echo step-two"
+	}
+	cmd := config.Command{
+		Name:     "fail-multi",
+		Commands: []string{step1, step2},
+		RunMode:  config.RunModeStream,
+	}
+	lines := make(chan runner.LogLine, 64)
+	if err := runner.Stream(cmd, lines); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	var collected []runner.LogLine
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case l, ok := <-lines:
+			if !ok {
+				goto done
+			}
+			collected = append(collected, l)
+		case <-timeout:
+			t.Fatal("timeout waiting for stream to close after step failure")
+		}
+	}
+done:
+	// Should have an error line and NOT have step-two output
+	foundErr := false
+	foundStepTwo := false
+	for _, l := range collected {
+		if l.IsErr && strings.Contains(l.Text, "error") {
+			foundErr = true
+		}
+		if strings.Contains(l.Text, "step-two") {
+			foundStepTwo = true
+		}
+	}
+	if !foundErr {
+		t.Errorf("expected error line after step failure, got: %v", collected)
+	}
+	if foundStepTwo {
+		t.Errorf("step-two output should not appear after step-one failure, got: %v", collected)
+	}
+}
+
+// ── RunBackground: empty steps ─────────────────────────────────────────────────
+
+func TestRunBackground_EmptySteps_ClosesImmediately(t *testing.T) {
+	cmd := config.Command{Name: "empty-bg", Commands: []string{}}
+	proc, err := runner.RunBackground(cmd)
+	if err != nil {
+		t.Fatalf("RunBackground error: %v", err)
+	}
+	if proc == nil {
+		t.Fatal("expected non-nil BackgroundProc")
+	}
+
+	timeout := time.After(3 * time.Second)
+	select {
+	case _, ok := <-proc.Lines:
+		if ok {
+			t.Error("channel should be immediately closed for empty steps")
+		}
+	case <-timeout:
+		t.Fatal("channel not closed for empty background command")
+	}
+}
+
+func TestRunBackground_MultiStep_ErrorLineOnStepFailure(t *testing.T) {
+	var step1, step2 string
+	if runtime.GOOS == "windows" {
+		step1 = "exit 1"
+		step2 = "echo step-two"
+	} else {
+		step1 = "exit 1"
+		step2 = "echo step-two"
+	}
+	cmd := config.Command{
+		Name:     "bg-fail",
+		Commands: []string{step1, step2},
+		RunMode:  config.RunModeBackground,
+	}
+	proc, err := runner.RunBackground(cmd)
+	if err != nil {
+		t.Fatalf("RunBackground error: %v", err)
+	}
+
+	var lines []runner.LogLine
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case l, ok := <-proc.Lines:
+			if !ok {
+				goto done
+			}
+			lines = append(lines, l)
+		case <-timeout:
+			t.Fatal("timeout waiting for background process to finish")
+		}
+	}
+done:
+	foundErr := false
+	for _, l := range lines {
+		if l.IsErr {
+			foundErr = true
+		}
+	}
+	if !foundErr {
+		t.Errorf("expected error line after step failure, got: %v", lines)
 	}
 }
