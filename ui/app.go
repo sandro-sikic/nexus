@@ -19,8 +19,9 @@ const (
 
 // AppModel is the root bubbletea model.
 type AppModel struct {
-	cfg   *config.Config
-	state appState
+	cfg     *config.Config
+	cfgPath string // path to the config file, used to persist state
+	state   appState
 
 	// Menu sub-models (only one active per ui_mode)
 	list  ListModel
@@ -36,7 +37,11 @@ type AppModel struct {
 }
 
 func NewApp(cfg *config.Config) AppModel {
-	m := AppModel{cfg: cfg}
+	return newApp(cfg, "")
+}
+
+func newApp(cfg *config.Config, cfgPath string) AppModel {
+	m := AppModel{cfg: cfg, cfgPath: cfgPath}
 	switch cfg.UIMode {
 	case config.UIModeList:
 		m.list = NewListModel(cfg)
@@ -131,6 +136,12 @@ func (m AppModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) launch(sel config.Command) (tea.Model, tea.Cmd) {
+	// Persist the selected index for list mode so the next run pre-selects it.
+	if m.cfg.UIMode == config.UIModeList && m.cfgPath != "" {
+		// Best-effort: ignore save errors so a read-only config doesn't block execution.
+		_ = config.SaveLastIndex(m.cfgPath, m.list.cursor)
+	}
+
 	switch sel.RunMode {
 	case config.RunModeHandoff:
 		// For handoff we need to quit the TUI first, then exec
@@ -200,8 +211,8 @@ func (m AppModel) View() string {
 }
 
 // Run starts the TUI and handles any post-TUI handoff.
-func Run(cfg *config.Config) error {
-	app := NewApp(cfg)
+func Run(cfg *config.Config, cfgPath string) error {
+	app := newApp(cfg, cfgPath)
 	p := tea.NewProgram(app, tea.WithAltScreen())
 
 	finalModel, err := p.Run()
@@ -221,8 +232,8 @@ func Run(cfg *config.Config) error {
 }
 
 // RunWithHandoff starts the program and performs handoff after the TUI exits.
-func RunWithHandoff(cfg *config.Config) error {
-	app := NewApp(cfg)
+func RunWithHandoff(cfg *config.Config, cfgPath string) error {
+	app := newApp(cfg, cfgPath)
 	p := tea.NewProgram(app, tea.WithAltScreen())
 
 	rawModel, err := p.Run()

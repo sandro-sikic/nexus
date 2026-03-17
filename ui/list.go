@@ -19,9 +19,14 @@ type ListModel struct {
 }
 
 func NewListModel(cfg *config.Config) ListModel {
+	cursor := cfg.LastIndex
+	if cursor < 0 || cursor >= len(cfg.Commands) {
+		cursor = 0
+	}
 	return ListModel{
 		title:    cfg.Title,
 		commands: cfg.Commands,
+		cursor:   cursor,
 		width:    80,
 		height:   24,
 	}
@@ -77,8 +82,11 @@ func (m ListModel) View() string {
 		if cmd.Description != "" {
 			line += "  " + descStyle.Render(cmd.Description)
 		}
-		if cmd.Command != "" {
-			line += "\n    " + cmdStyle.Render("$ "+cmd.Command)
+		steps := cmd.Steps()
+		if len(steps) == 1 {
+			line += "\n    " + cmdStyle.Render("$ "+steps[0])
+		} else if len(steps) > 1 {
+			line += "\n    " + cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more steps)", steps[0], len(steps)-1))
 		}
 		b.WriteString(line + "\n")
 	}

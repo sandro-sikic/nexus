@@ -55,7 +55,16 @@ func (m *FuzzyModel) applyFilter() {
 	}
 	var out []config.Command
 	for _, c := range m.all {
-		if fuzzyMatch(m.query, c.Name) || fuzzyMatch(m.query, c.Description) || fuzzyMatch(m.query, c.Command) {
+		matched := fuzzyMatch(m.query, c.Name) || fuzzyMatch(m.query, c.Description)
+		if !matched {
+			for _, step := range c.Steps() {
+				if fuzzyMatch(m.query, step) {
+					matched = true
+					break
+				}
+			}
+		}
+		if matched {
 			out = append(out, c)
 		}
 	}
@@ -124,8 +133,11 @@ func (m FuzzyModel) View() string {
 		if cmd.Description != "" {
 			line += "  " + descStyle.Render(cmd.Description)
 		}
-		if cmd.Command != "" {
-			line += "\n    " + cmdStyle.Render("$ "+cmd.Command)
+		steps := cmd.Steps()
+		if len(steps) == 1 {
+			line += "\n    " + cmdStyle.Render("$ "+steps[0])
+		} else if len(steps) > 1 {
+			line += "\n    " + cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more steps)", steps[0], len(steps)-1))
 		}
 		b.WriteString(line + "\n")
 	}

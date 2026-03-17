@@ -4,6 +4,9 @@
 # run_mode: stream | handoff | background
 #
 # Per-command run_mode overrides the top-level default.
+#
+# Multi-step commands: use "commands" (list) instead of "command" (string)
+# to run several shell commands sequentially. Execution stops on first failure.
 
 title: "My Project Runner"
 ui_mode: group        # show commands organized by group
@@ -16,6 +19,14 @@ commands:
     command: "npm run dev"
     group: Development
     run_mode: handoff   # hand off terminal; Ctrl+C works normally
+
+  - name: Setup and Dev
+    description: Install deps then start the dev server
+    commands:
+      - "npm install"
+      - "npm run dev"
+    group: Development
+    run_mode: handoff
 
   - name: Watch Tests
     description: Run tests in watch mode

@@ -12,6 +12,7 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "runner.yaml", "path to runner config file")
+	wizard := flag.Bool("wizard", false, "open the setup/edit wizard before launching")
 	flag.Parse()
 
 	cfg, err := config.Load(*cfgPath)
@@ -21,7 +22,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Config file missing — launch the setup wizard.
+		// Config file missing — launch the setup wizard (create mode).
 		result, wizErr := ui.RunWizard(*cfgPath)
 		if wizErr != nil {
 			fmt.Fprintf(os.Stderr, "runner: wizard error: %v\n", wizErr)
@@ -38,9 +39,32 @@ func main() {
 
 		// Use the freshly created config directly — no need to re-read disk.
 		cfg = result.Config
+	} else if *wizard {
+		// Config exists and --wizard was requested — launch in edit mode.
+		result, wizErr := ui.RunWizardEdit(*cfgPath, cfg)
+		if wizErr != nil {
+			fmt.Fprintf(os.Stderr, "runner: wizard error: %v\n", wizErr)
+			os.Exit(1)
+		}
+		if result.Aborted {
+			fmt.Fprintln(os.Stderr, "runner: edit aborted.")
+			os.Exit(0)
+		}
+		if result.SaveErr != "" {
+			fmt.Fprintf(os.Stderr, "runner: could not save config: %v\n", result.SaveErr)
+			os.Exit(1)
+		}
+
+		// Re-read the updated config from disk so per-command run_mode
+		// inheritance is re-applied correctly.
+		cfg, err = config.Load(*cfgPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "runner: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	if err := ui.Run(cfg); err != nil {
+	if err := ui.Run(cfg, *cfgPath); err != nil {
 		fmt.Fprintf(os.Stderr, "runner: %v\n", err)
 		os.Exit(1)
 	}

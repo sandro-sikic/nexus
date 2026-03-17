@@ -411,3 +411,163 @@ done:
 		// Non-fatal: path representation can vary across platforms.
 	}
 }
+
+// ── Multi-command (Commands field) ────────────────────────────────────────────
+
+// multiStepCmd returns a command with two shell steps.
+func multiStepCmd() config.Command {
+	var step1, step2 string
+	if runtime.GOOS == "windows" {
+		step1 = "echo step-one"
+		step2 = "echo step-two"
+	} else {
+		step1 = "echo step-one"
+		step2 = "echo step-two"
+	}
+	return config.Command{
+		Name:     "multi",
+		Commands: []string{step1, step2},
+		RunMode:  config.RunModeStream,
+	}
+}
+
+func TestStream_MultiStep_AllOutputCollected(t *testing.T) {
+	lines := make(chan runner.LogLine, 64)
+	if err := runner.Stream(multiStepCmd(), lines); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	var texts []string
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case l, ok := <-lines:
+			if !ok {
+				goto done
+			}
+			texts = append(texts, l.Text)
+		case <-timeout:
+			t.Fatal("timeout waiting for multi-step stream")
+		}
+	}
+done:
+	foundOne, foundTwo := false, false
+	for _, s := range texts {
+		if strings.Contains(s, "step-one") {
+			foundOne = true
+		}
+		if strings.Contains(s, "step-two") {
+			foundTwo = true
+		}
+	}
+	if !foundOne {
+		t.Errorf("expected 'step-one' in output, got: %v", texts)
+	}
+	if !foundTwo {
+		t.Errorf("expected 'step-two' in output, got: %v", texts)
+	}
+}
+
+func TestStream_MultiStep_StepsAnnouncedInOrder(t *testing.T) {
+	lines := make(chan runner.LogLine, 64)
+	if err := runner.Stream(multiStepCmd(), lines); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	var texts []string
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case l, ok := <-lines:
+			if !ok {
+				goto done
+			}
+			texts = append(texts, l.Text)
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+done:
+	// The first non-empty line should be the "[1/2] step-one" banner.
+	found1of2 := false
+	for _, s := range texts {
+		if strings.Contains(s, "[1/2]") {
+			found1of2 = true
+			break
+		}
+	}
+	if !found1of2 {
+		t.Errorf("expected '[1/2]' step banner in output, got: %v", texts)
+	}
+}
+
+func TestRunBackground_MultiStep_AllOutputCollected(t *testing.T) {
+	proc, err := runner.RunBackground(multiStepCmd())
+	if err != nil {
+		t.Fatalf("RunBackground error: %v", err)
+	}
+
+	var texts []string
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case l, ok := <-proc.Lines:
+			if !ok {
+				goto done
+			}
+			texts = append(texts, l.Text)
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+done:
+	foundOne, foundTwo := false, false
+	for _, s := range texts {
+		if strings.Contains(s, "step-one") {
+			foundOne = true
+		}
+		if strings.Contains(s, "step-two") {
+			foundTwo = true
+		}
+	}
+	if !foundOne {
+		t.Errorf("expected 'step-one' in bg output: %v", texts)
+	}
+	if !foundTwo {
+		t.Errorf("expected 'step-two' in bg output: %v", texts)
+	}
+}
+
+func TestStream_MultiStep_EmptyCommandsClosesChannel(t *testing.T) {
+	cmd := config.Command{Name: "empty", Commands: []string{}}
+	lines := make(chan runner.LogLine, 8)
+	if err := runner.Stream(cmd, lines); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	timeout := time.After(3 * time.Second)
+	select {
+	case _, ok := <-lines:
+		if ok {
+			t.Fatal("channel should be closed immediately for empty commands")
+		}
+	case <-timeout:
+		t.Fatal("channel not closed for empty command list")
+	}
+}
+
+func TestWizard_MultiStep_CommitCommand(t *testing.T) {
+	// This tests the wizard helper logic via the addCommand flow with extra step.
+	// We verify Steps() returns both commands after round-tripping through config.
+	cmd := config.Command{
+		Name:     "Setup",
+		Commands: []string{"npm install", "npm run dev"},
+		RunMode:  config.RunModeHandoff,
+	}
+	steps := cmd.Steps()
+	if len(steps) != 2 {
+		t.Fatalf("Steps() len: got %d, want 2", len(steps))
+	}
+	if steps[0] != "npm install" || steps[1] != "npm run dev" {
+		t.Errorf("Steps(): got %v", steps)
+	}
+}

@@ -77,19 +77,21 @@ var (
 type wizStep int
 
 const (
-	wizStepWelcome    wizStep = iota // 0 – info screen, press enter
-	wizStepTitle                     // 1 – text input
-	wizStepUIMode                    // 2 – option picker
-	wizStepRunMode                   // 3 – option picker
-	wizStepCmdName                   // 4 – text input
-	wizStepCmdDesc                   // 5 – text input (optional)
-	wizStepCmdCommand                // 6 – text input
-	wizStepCmdDir                    // 7 – text input (optional)
-	wizStepCmdGroup                  // 8 – text input (optional)
-	wizStepCmdRunMode                // 9 – option picker (inherit | stream | handoff | background)
-	wizStepAddAnother                // 10 – yes/no picker
-	wizStepSummary                   // 11 – review + confirm
-	wizStepDone                      // 12 – finished
+	wizStepWelcome         wizStep = iota // 0 – info screen, press enter
+	wizStepTitle                          // 1 – text input
+	wizStepUIMode                         // 2 – option picker
+	wizStepRunMode                        // 3 – option picker
+	wizStepCmdName                        // 4 – text input
+	wizStepCmdDesc                        // 5 – text input (optional)
+	wizStepCmdCommand                     // 6 – text input (first shell command)
+	wizStepCmdMoreCommands                // 7 – repeat: add more shell commands (leave blank to stop)
+	wizStepCmdDir                         // 8 – text input (optional)
+	wizStepCmdGroup                       // 9 – text input (optional)
+	wizStepCmdRunMode                     // 10 – option picker (inherit | stream | handoff | background)
+	wizStepAddAnother                     // 11 – yes/no picker
+	wizStepDeleteCmds                     // 12 – multi-select: mark commands for deletion
+	wizStepSummary                        // 13 – review + confirm
+	wizStepDone                           // 14 – finished
 )
 
 // ── Option picker ─────────────────────────────────────────────────────────────
@@ -112,6 +114,7 @@ type WizardModel struct {
 	saved     bool   // file was written successfully
 	saveErr   string // error from write
 	savePath  string // destination path
+	editing   bool   // true when editing an existing config (vs. creating new)
 
 	// collected global config values
 	cfgTitle   string
@@ -119,15 +122,19 @@ type WizardModel struct {
 	cfgRunMode config.RunMode
 
 	// command being built
-	cmdName    string
-	cmdDesc    string
-	cmdCommand string
-	cmdDir     string
-	cmdGroup   string
-	cmdRunMode config.RunMode // "" means "inherit"
+	cmdName          string
+	cmdDesc          string
+	cmdCommand       string   // first shell command
+	cmdExtraCommands []string // additional shell commands (multi-step)
+	cmdDir           string
+	cmdGroup         string
+	cmdRunMode       config.RunMode // "" means "inherit"
 
 	// accumulated commands
 	commands []config.Command
+
+	// delete step: parallel bool slice — true means "mark for deletion"
+	deleteMarks []bool
 
 	width  int
 	height int
@@ -141,6 +148,28 @@ func NewWizard(savePath string) WizardModel {
 		width:    80,
 		height:   24,
 	}
+}
+
+// NewWizardFromConfig creates a WizardModel pre-populated from an existing
+// config so the user can edit it. All global fields and existing commands are
+// seeded with the current config values. The user can confirm each step with
+// Enter to keep the existing value, or type to replace it.
+func NewWizardFromConfig(savePath string, cfg *config.Config) WizardModel {
+	m := NewWizard(savePath)
+	m.editing = true
+
+	// Pre-fill global fields.
+	m.cfgTitle = cfg.Title
+	m.cfgUIMode = cfg.UIMode
+	m.cfgRunMode = cfg.RunMode
+
+	// Carry over existing commands. They will be shown in the summary and
+	// saved as-is; the wizard only appends new commands on top.
+	// Deep-copy so we don't alias the caller's slice.
+	m.commands = make([]config.Command, len(cfg.Commands))
+	copy(m.commands, cfg.Commands)
+
+	return m
 }
 
 // Result returns the assembled Config after the wizard completes.
@@ -193,6 +222,17 @@ var addAnotherOptions = []wizOption{
 	{value: "no", label: "No", desc: "Finish and save"},
 }
 
+// optionIndex returns the index of the option whose value matches v,
+// or 0 if not found (safe fallback for the first option).
+func optionIndex(opts []wizOption, v string) int {
+	for i, o := range opts {
+		if o.value == v {
+			return i
+		}
+	}
+	return 0
+}
+
 // currentOptions returns the option list for the current step (if any).
 func (m WizardModel) currentOptions() []wizOption {
 	switch m.step {
@@ -232,6 +272,30 @@ func (m WizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyCtrlC {
 		m.aborted = true
 		return m, tea.Quit
+	}
+
+	// ── Delete-commands step has its own navigation/toggle logic ──────────
+	if m.step == wizStepDeleteCmds {
+		switch msg.Type {
+		case tea.KeyUp:
+			if m.optCursor > 0 {
+				m.optCursor--
+				m.validErr = ""
+			}
+		case tea.KeyDown:
+			if m.optCursor < len(m.commands)-1 {
+				m.optCursor++
+				m.validErr = ""
+			}
+		case tea.KeyRunes:
+			if msg.String() == " " && len(m.deleteMarks) > 0 {
+				m.deleteMarks[m.optCursor] = !m.deleteMarks[m.optCursor]
+				m.validErr = ""
+			}
+		case tea.KeyEnter:
+			return m.advance()
+		}
+		return m, nil
 	}
 
 	opts := m.currentOptions()
@@ -286,7 +350,13 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 
 	// ── Welcome ───────────────────────────────────────────────────────────
 	case wizStepWelcome:
-		m.inputBuf = ""
+		// When editing, pre-fill the title input with the existing value so
+		// the user can confirm it with Enter or clear/replace it.
+		if m.editing {
+			m.inputBuf = m.cfgTitle
+		} else {
+			m.inputBuf = ""
+		}
 		m.step = wizStepTitle
 
 	// ── Title ─────────────────────────────────────────────────────────────
@@ -297,13 +367,15 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 		}
 		m.cfgTitle = title
 		m.inputBuf = ""
-		m.optCursor = 0
+		// Pre-select the cursor on the current ui_mode when editing.
+		m.optCursor = optionIndex(uiModeOptions, string(m.cfgUIMode))
 		m.step = wizStepUIMode
 
 	// ── UI mode ───────────────────────────────────────────────────────────
 	case wizStepUIMode:
 		m.cfgUIMode = config.UIMode(uiModeOptions[m.optCursor].value)
-		m.optCursor = 0
+		// Pre-select the cursor on the current run_mode when editing.
+		m.optCursor = optionIndex(runModeOptions, string(m.cfgRunMode))
 		m.step = wizStepRunMode
 
 	// ── Default run mode ──────────────────────────────────────────────────
@@ -338,8 +410,21 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.cmdCommand = command
+		m.cmdExtraCommands = nil
 		m.inputBuf = ""
-		m.step = wizStepCmdDir
+		m.step = wizStepCmdMoreCommands
+
+	// ── Command: additional shell commands (optional, repeating) ──────────
+	case wizStepCmdMoreCommands:
+		extra := strings.TrimSpace(m.inputBuf)
+		m.inputBuf = ""
+		if extra == "" {
+			// User left blank — done adding commands, move on.
+			m.step = wizStepCmdDir
+		} else {
+			m.cmdExtraCommands = append(m.cmdExtraCommands, extra)
+			// Stay on this step so the user can add another.
+		}
 
 	// ── Command: working directory (optional) ────────────────────────────
 	case wizStepCmdDir:
@@ -374,8 +459,38 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 			m.optCursor = 0
 			m.step = wizStepCmdName
 		} else {
-			m.step = wizStepSummary
+			// Always offer the delete step so the user can trim the list.
+			m.deleteMarks = make([]bool, len(m.commands))
+			m.optCursor = 0
+			m.step = wizStepDeleteCmds
 		}
+
+	// ── Delete commands ───────────────────────────────────────────────────
+	case wizStepDeleteCmds:
+		// Remove every command whose mark is set, provided at least one would
+		// remain. If all are marked we refuse and show an error instead.
+		markedCount := 0
+		for _, marked := range m.deleteMarks {
+			if marked {
+				markedCount++
+			}
+		}
+		if markedCount == len(m.commands) {
+			m.validErr = "At least one command must remain"
+			return m, nil
+		}
+		if markedCount > 0 {
+			kept := m.commands[:0:0] // fresh slice, same backing array type
+			for i, cmd := range m.commands {
+				if !m.deleteMarks[i] {
+					kept = append(kept, cmd)
+				}
+			}
+			m.commands = kept
+		}
+		m.deleteMarks = nil
+		m.validErr = ""
+		m.step = wizStepSummary
 
 	// ── Summary: confirm ──────────────────────────────────────────────────
 	case wizStepSummary:
@@ -401,14 +516,20 @@ func (m *WizardModel) commitCommand() {
 	if rm == "" {
 		rm = m.cfgRunMode
 	}
-	m.commands = append(m.commands, config.Command{
+	cmd := config.Command{
 		Name:        m.cmdName,
 		Description: m.cmdDesc,
-		Command:     m.cmdCommand,
 		Dir:         m.cmdDir,
 		Group:       m.cmdGroup,
 		RunMode:     rm,
-	})
+	}
+	if len(m.cmdExtraCommands) > 0 {
+		// Store all steps in the Commands slice.
+		cmd.Commands = append([]string{m.cmdCommand}, m.cmdExtraCommands...)
+	} else {
+		cmd.Command = m.cmdCommand
+	}
+	m.commands = append(m.commands, cmd)
 }
 
 // resetCmdFields clears the per-command scratch space.
@@ -416,6 +537,7 @@ func (m *WizardModel) resetCmdFields() {
 	m.cmdName = ""
 	m.cmdDesc = ""
 	m.cmdCommand = ""
+	m.cmdExtraCommands = nil
 	m.cmdDir = ""
 	m.cmdGroup = ""
 	m.cmdRunMode = ""
@@ -465,10 +587,12 @@ func (m WizardModel) View() string {
 	case wizStepCmdCommand:
 		return m.viewTextInput(
 			fmt.Sprintf("Command #%d — Shell Command", len(m.commands)+1),
-			"The shell command to execute.",
+			"The first (or only) shell command to execute.",
 			"e.g. npm run dev",
 			false,
 		)
+	case wizStepCmdMoreCommands:
+		return m.viewMoreCommands()
 	case wizStepCmdDir:
 		return m.viewTextInput(
 			fmt.Sprintf("Command #%d — Working Directory", len(m.commands)+1),
@@ -495,6 +619,8 @@ func (m WizardModel) View() string {
 			fmt.Sprintf("%d command(s) added so far.", len(m.commands)),
 			addAnotherOptions,
 		)
+	case wizStepDeleteCmds:
+		return m.viewDeleteCmds()
 	case wizStepSummary:
 		return m.viewSummary()
 	case wizStepDone:
@@ -507,13 +633,23 @@ func (m WizardModel) View() string {
 
 func (m WizardModel) viewWelcome() string {
 	var b strings.Builder
-	b.WriteString(wizTitleStyle.Render("Runner — Setup Wizard") + "\n")
-	b.WriteString(wizSeparator + "\n\n")
-	b.WriteString(wizWarningStyle.Render("  No runner.yaml found at the expected path.") + "\n\n")
-	b.WriteString(wizSubtitleStyle.Render(
-		"  This wizard will guide you through creating one.\n" +
-			"  You'll define global settings and at least one command.\n",
-	))
+	if m.editing {
+		b.WriteString(wizTitleStyle.Render("Runner — Edit Configuration") + "\n")
+		b.WriteString(wizSeparator + "\n\n")
+		b.WriteString(wizSubtitleStyle.Render(
+			"  Walk through each setting to update it.\n" +
+				"  Press enter to keep the current value, or type to replace it.\n" +
+				fmt.Sprintf("  Existing commands (%d) will be kept; you can add new ones.\n", len(m.commands)),
+		))
+	} else {
+		b.WriteString(wizTitleStyle.Render("Runner — Setup Wizard") + "\n")
+		b.WriteString(wizSeparator + "\n\n")
+		b.WriteString(wizWarningStyle.Render("  No runner.yaml found at the expected path.") + "\n\n")
+		b.WriteString(wizSubtitleStyle.Render(
+			"  This wizard will guide you through creating one.\n" +
+				"  You'll define global settings and at least one command.\n",
+		))
+	}
 	b.WriteString(wizHelpStyle.Render("\n  Press enter to begin  •  ctrl+c to abort"))
 	return b.String()
 }
@@ -545,6 +681,40 @@ func (m WizardModel) viewTextInput(title, hint, placeholder string, optional boo
 	return b.String()
 }
 
+func (m WizardModel) viewMoreCommands() string {
+	var b strings.Builder
+	idx := len(m.commands) + 1
+	stepNum := len(m.cmdExtraCommands) + 2 // first command is step 1
+	b.WriteString(wizTitleStyle.Render(fmt.Sprintf("Runner — Command #%d — Step %d", idx, stepNum)) + "\n")
+	b.WriteString(wizSeparator + "\n\n")
+
+	// Show what has been collected so far.
+	b.WriteString("  " + wizSubtitleStyle.Render("Commands added so far:") + "\n")
+	b.WriteString("  " + wizDimStyle.Render(fmt.Sprintf("  1. %s", m.cmdCommand)) + "\n")
+	for i, c := range m.cmdExtraCommands {
+		b.WriteString("  " + wizDimStyle.Render(fmt.Sprintf("  %d. %s", i+2, c)) + "\n")
+	}
+	b.WriteString("\n")
+
+	hint := "Add another shell command, or leave blank to finish adding steps."
+	b.WriteString("  " + wizSubtitleStyle.Render(hint) + "\n\n")
+
+	display := m.inputBuf
+	if display == "" {
+		display = wizDimStyle.Render("e.g. npm run build  (leave blank to stop)")
+	} else {
+		display = wizValueStyle.Render(display)
+	}
+	b.WriteString("  " + wizLabelStyle.Render(">") + " " + display + wizCursorStyle.Render("█") + "\n")
+
+	if m.validErr != "" {
+		b.WriteString("\n  " + wizErrorStyle.Render("✗ "+m.validErr) + "\n")
+	}
+
+	b.WriteString(wizHelpStyle.Render("\n  enter to add step / leave blank to finish  •  ctrl+c to abort"))
+	return b.String()
+}
+
 func (m WizardModel) viewOptionPicker(title, hint string, opts []wizOption) string {
 	var b strings.Builder
 	b.WriteString(wizTitleStyle.Render("Runner — "+title) + "\n")
@@ -571,6 +741,48 @@ func (m WizardModel) viewOptionPicker(title, hint string, opts []wizOption) stri
 	return b.String()
 }
 
+func (m WizardModel) viewDeleteCmds() string {
+	var b strings.Builder
+	b.WriteString(wizTitleStyle.Render("Runner — Delete Commands") + "\n")
+	b.WriteString(wizSeparator + "\n\n")
+	b.WriteString("  " + wizSubtitleStyle.Render("Mark commands to delete, then press enter to confirm.\n  At least one command must remain.") + "\n\n")
+
+	for i, cmd := range m.commands {
+		cursor := "  "
+		if i == m.optCursor {
+			cursor = wizCursorStyle.Render("▶ ")
+		}
+
+		var checkbox string
+		if len(m.deleteMarks) > i && m.deleteMarks[i] {
+			checkbox = wizErrorStyle.Render("[✗]")
+		} else {
+			checkbox = wizDimStyle.Render("[ ]")
+		}
+
+		name := cmd.Name
+		if i == m.optCursor {
+			name = wizSelectedOptStyle.Render(name)
+		} else {
+			name = wizOptStyle.Render(name)
+		}
+
+		desc := ""
+		if cmd.Description != "" {
+			desc = "  " + wizDimStyle.Render(cmd.Description)
+		}
+
+		b.WriteString(fmt.Sprintf("  %s%s %s%s\n", cursor, checkbox, name, desc))
+	}
+
+	if m.validErr != "" {
+		b.WriteString("\n  " + wizErrorStyle.Render("✗ "+m.validErr) + "\n")
+	}
+
+	b.WriteString(wizHelpStyle.Render("\n  ↑/↓ navigate  •  space toggle  •  enter confirm  •  ctrl+c abort"))
+	return b.String()
+}
+
 func (m WizardModel) viewSummary() string {
 	var b strings.Builder
 	b.WriteString(wizTitleStyle.Render("Runner — Summary") + "\n")
@@ -590,7 +802,15 @@ func (m WizardModel) viewSummary() string {
 		if c.Description != "" {
 			b.WriteString(wizDimStyle.Render("    desc     ") + wizValueStyle.Render(c.Description) + "\n")
 		}
-		b.WriteString(wizDimStyle.Render("    command  ") + wizValueStyle.Render(c.Command) + "\n")
+		steps := c.Steps()
+		if len(steps) == 1 {
+			b.WriteString(wizDimStyle.Render("    command  ") + wizValueStyle.Render(steps[0]) + "\n")
+		} else {
+			b.WriteString(wizDimStyle.Render("    commands ") + "\n")
+			for j, step := range steps {
+				b.WriteString(wizDimStyle.Render(fmt.Sprintf("      %d. ", j+1)) + wizValueStyle.Render(step) + "\n")
+			}
+		}
 		if c.Dir != "" {
 			b.WriteString(wizDimStyle.Render("    dir      ") + wizValueStyle.Render(c.Dir) + "\n")
 		}
@@ -615,6 +835,9 @@ func (m WizardModel) viewDone() string {
 	if m.saveErr != "" {
 		b.WriteString(wizErrorStyle.Render("  ✗ Failed to write "+m.savePath) + "\n")
 		b.WriteString(wizErrorStyle.Render("    "+m.saveErr) + "\n")
+	} else if m.editing {
+		b.WriteString(wizSuccessStyle.Render("  ✓ "+m.savePath+" updated successfully!") + "\n\n")
+		b.WriteString(wizSubtitleStyle.Render("  Runner will now start with your updated configuration.\n"))
 	} else {
 		b.WriteString(wizSuccessStyle.Render("  ✓ "+m.savePath+" created successfully!") + "\n\n")
 		b.WriteString(wizSubtitleStyle.Render("  Runner will now start with your new configuration.\n"))
@@ -633,9 +856,8 @@ type WizardResult struct {
 	Config  *config.Config
 }
 
-// RunWizard runs the TUI wizard and returns its result.
-func RunWizard(savePath string) (WizardResult, error) {
-	m := NewWizard(savePath)
+// runWizardModel is the shared runner used by both RunWizard and RunWizardEdit.
+func runWizardModel(m WizardModel) (WizardResult, error) {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	final, err := p.Run()
 	if err != nil {
@@ -655,4 +877,15 @@ func RunWizard(savePath string) (WizardResult, error) {
 		result.Config = wm.Result()
 	}
 	return result, nil
+}
+
+// RunWizardEdit runs the wizard pre-populated with the values from an existing
+// config. On completion the updated config is written to savePath and returned.
+func RunWizardEdit(savePath string, cfg *config.Config) (WizardResult, error) {
+	return runWizardModel(NewWizardFromConfig(savePath, cfg))
+}
+
+// RunWizard runs the TUI wizard and returns its result.
+func RunWizard(savePath string) (WizardResult, error) {
+	return runWizardModel(NewWizard(savePath))
 }

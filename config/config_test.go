@@ -240,6 +240,90 @@ func TestConstants(t *testing.T) {
 	}
 }
 
+// ── LastIndex ─────────────────────────────────────────────────────────────────
+
+func TestLoad_LastIndexDefaultsToZero(t *testing.T) {
+	cfg, err := config.Load(writeTemp(t, "commands: []"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LastIndex != 0 {
+		t.Errorf("last_index default: got %d, want 0", cfg.LastIndex)
+	}
+}
+
+func TestLoad_LastIndexPersisted(t *testing.T) {
+	yaml := `
+commands:
+  - name: A
+    command: echo a
+  - name: B
+    command: echo b
+last_index: 1
+`
+	cfg, err := config.Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LastIndex != 1 {
+		t.Errorf("last_index: got %d, want 1", cfg.LastIndex)
+	}
+}
+
+func TestSaveLastIndex_RoundTrip(t *testing.T) {
+	path := writeTemp(t, `
+commands:
+  - name: A
+    command: echo a
+  - name: B
+    command: echo b
+`)
+	if err := config.SaveLastIndex(path, 1); err != nil {
+		t.Fatalf("SaveLastIndex: %v", err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load after save: %v", err)
+	}
+	if cfg.LastIndex != 1 {
+		t.Errorf("last_index after save: got %d, want 1", cfg.LastIndex)
+	}
+}
+
+func TestSaveLastIndex_PreservesOtherFields(t *testing.T) {
+	path := writeTemp(t, `
+title: My App
+ui_mode: list
+run_mode: handoff
+commands:
+  - name: Deploy
+    command: make deploy
+`)
+	if err := config.SaveLastIndex(path, 0); err != nil {
+		t.Fatalf("SaveLastIndex: %v", err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Title != "My App" {
+		t.Errorf("title changed: got %q", cfg.Title)
+	}
+	if cfg.RunMode != config.RunModeHandoff {
+		t.Errorf("run_mode changed: got %q", cfg.RunMode)
+	}
+	if len(cfg.Commands) != 1 || cfg.Commands[0].Name != "Deploy" {
+		t.Errorf("commands changed: %+v", cfg.Commands)
+	}
+}
+
+func TestSaveLastIndex_MissingFile(t *testing.T) {
+	err := config.SaveLastIndex("/nonexistent/path/runner.yaml", 0)
+	if err == nil {
+		t.Error("expected error for missing file")
+	}
+}
+
 // ── Optional fields ───────────────────────────────────────────────────────────
 
 func TestLoad_CommandOptionalFields(t *testing.T) {
@@ -261,5 +345,100 @@ commands:
 	}
 	if cmd.Description != "" {
 		t.Errorf("description should default empty, got %q", cmd.Description)
+	}
+}
+
+// ── Multi-command (Steps) ────────────────────────────────────────────────────
+
+func TestCommand_Steps_SingleCommand(t *testing.T) {
+	cmd := config.Command{Command: "echo hi"}
+	steps := cmd.Steps()
+	if len(steps) != 1 || steps[0] != "echo hi" {
+		t.Errorf("Steps(): got %v, want [echo hi]", steps)
+	}
+}
+
+func TestCommand_Steps_MultipleCommands(t *testing.T) {
+	cmd := config.Command{Commands: []string{"cd app", "npm run dev"}}
+	steps := cmd.Steps()
+	if len(steps) != 2 {
+		t.Fatalf("Steps() len: got %d, want 2", len(steps))
+	}
+	if steps[0] != "cd app" || steps[1] != "npm run dev" {
+		t.Errorf("Steps(): got %v", steps)
+	}
+}
+
+func TestCommand_Steps_CommandsFieldTakesPrecedence(t *testing.T) {
+	// When both Command and Commands are set, Commands wins.
+	cmd := config.Command{
+		Command:  "single",
+		Commands: []string{"first", "second"},
+	}
+	steps := cmd.Steps()
+	if len(steps) != 2 || steps[0] != "first" {
+		t.Errorf("Steps() should use Commands when both set: got %v", steps)
+	}
+}
+
+func TestCommand_Steps_Empty(t *testing.T) {
+	cmd := config.Command{}
+	steps := cmd.Steps()
+	if len(steps) != 0 {
+		t.Errorf("Steps() on empty command: got %v, want []", steps)
+	}
+}
+
+func TestLoad_MultiCommandField(t *testing.T) {
+	yaml := `
+commands:
+  - name: Setup
+    commands:
+      - "cd app"
+      - "npm install"
+      - "npm run dev"
+`
+	cfg, err := config.Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Commands) != 1 {
+		t.Fatalf("commands: got %d, want 1", len(cfg.Commands))
+	}
+	steps := cfg.Commands[0].Steps()
+	if len(steps) != 3 {
+		t.Fatalf("Steps() len: got %d, want 3", len(steps))
+	}
+	if steps[0] != "cd app" || steps[1] != "npm install" || steps[2] != "npm run dev" {
+		t.Errorf("Steps(): got %v", steps)
+	}
+}
+
+func TestLoad_MultiCommand_RoundTrip(t *testing.T) {
+	path := writeTemp(t, `
+commands:
+  - name: Multi
+    commands:
+      - echo one
+      - echo two
+    run_mode: stream
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if err := config.Write(path, cfg); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+
+	steps := reloaded.Commands[0].Steps()
+	if len(steps) != 2 || steps[0] != "echo one" || steps[1] != "echo two" {
+		t.Errorf("round-trip Steps(): got %v", steps)
 	}
 }

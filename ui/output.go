@@ -116,7 +116,15 @@ func (m OutputModel) View() string {
 
 	header := titleStyle.Render(fmt.Sprintf("Running: %s", m.cmd.Name))
 	b.WriteString(header + "\n")
-	b.WriteString(cmdStyle.Render("$ "+m.cmd.Command) + "\n\n")
+	steps := m.cmd.Steps()
+	if len(steps) == 1 {
+		b.WriteString(cmdStyle.Render("$ "+steps[0]) + "\n\n")
+	} else {
+		for i, step := range steps {
+			b.WriteString(cmdStyle.Render(fmt.Sprintf("  [%d] $ %s", i+1, step)) + "\n")
+		}
+		b.WriteString("\n")
+	}
 
 	visible := m.height - 6
 	if visible < 1 {
@@ -241,7 +249,15 @@ func (m BackgroundModel) View() string {
 	}
 
 	b.WriteString(titleStyle.Render(fmt.Sprintf("[BG] %s (%s)", m.cmd.Name, status)) + "\n")
-	b.WriteString(cmdStyle.Render("$ "+m.cmd.Command) + "\n\n")
+	steps := m.cmd.Steps()
+	if len(steps) == 1 {
+		b.WriteString(cmdStyle.Render("$ "+steps[0]) + "\n\n")
+	} else {
+		for i, step := range steps {
+			b.WriteString(cmdStyle.Render(fmt.Sprintf("  [%d] $ %s", i+1, step)) + "\n")
+		}
+		b.WriteString("\n")
+	}
 
 	visible := m.height - 6
 	if visible < 1 {

@@ -131,8 +131,11 @@ func (m GroupModel) View() string {
 		if e.cmd.Description != "" {
 			line += "  " + descStyle.Render(e.cmd.Description)
 		}
-		if e.cmd.Command != "" {
-			line += "\n      " + cmdStyle.Render("$ "+e.cmd.Command)
+		steps := e.cmd.Steps()
+		if len(steps) == 1 {
+			line += "\n      " + cmdStyle.Render("$ "+steps[0])
+		} else if len(steps) > 1 {
+			line += "\n      " + cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more steps)", steps[0], len(steps)-1))
 		}
 		b.WriteString(line + "\n")
 	}
