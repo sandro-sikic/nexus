@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 
 	"nexus/config"
 )
@@ -36,12 +35,7 @@ func (b *BackgroundProc) Wait() {
 func buildCmdFromShell(shellCmd string, dir string) *exec.Cmd {
 	var c *exec.Cmd
 	if runtime.GOOS == "windows" {
-		// Use SysProcAttr.CmdLine to pass the raw command string directly to
-		// the Windows process creation API, bypassing Go's argument quoting.
-		// This prevents cmd.exe from misinterpreting characters like colons in
-		// remote paths (e.g. scp host:/path) that Go's quoting would mangle.
-		c = exec.Command("cmd")
-		c.SysProcAttr = &syscall.SysProcAttr{CmdLine: "/C " + shellCmd}
+		c = newWindowsCmd(shellCmd)
 	} else {
 		c = exec.Command("sh", "-c", shellCmd)
 	}
