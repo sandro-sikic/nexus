@@ -32,8 +32,9 @@ type AppModel struct {
 	output OutputModel
 	bg     BackgroundModel
 
-	quitting bool
-	err      string
+	quitting   bool
+	handoffCmd *config.Command // set when a handoff is pending
+	err        string
 }
 
 func NewApp(cfg *config.Config) AppModel {
@@ -103,6 +104,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+	}
+
+	// Handle handoff message: store the command and quit the TUI.
+	if hm, ok := msg.(handoffMsg); ok {
+		m.handoffCmd = &hm.cmd
+		return m, tea.Quit
 	}
 
 	switch m.state {
@@ -220,32 +227,11 @@ func Run(cfg *config.Config, cfgPath string) error {
 		return fmt.Errorf("tui: %w", err)
 	}
 
-	// Check if we need to do a handoff
-	if final, ok := finalModel.(AppModel); ok {
-		if final.selectedCmd() != nil && final.cfg != nil {
-			// Should not happen – handled via handoffMsg
-		}
-		_ = final
+	// If a handoff was requested, execute it now that the TUI has exited.
+	if final, ok := finalModel.(AppModel); ok && final.handoffCmd != nil {
+		return HandleHandoff(*final.handoffCmd)
 	}
 
-	return nil
-}
-
-// RunWithHandoff starts the program and performs handoff after the TUI exits.
-func RunWithHandoff(cfg *config.Config, cfgPath string) error {
-	app := newApp(cfg, cfgPath)
-	p := tea.NewProgram(app, tea.WithAltScreen())
-
-	rawModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("tui: %w", err)
-	}
-
-	// If a handoff was requested, the model carries it
-	if final, ok := rawModel.(AppModel); ok && final.quitting {
-		// Nothing more to do; handoff already happened or user quit
-		_ = final
-	}
 	return nil
 }
 

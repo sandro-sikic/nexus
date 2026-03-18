@@ -127,6 +127,7 @@ func streamOne(c *exec.Cmd, lines chan<- LogLine) error {
 	scanLines := func(r interface{ Read([]byte) (int, error) }, isErr bool) {
 		defer wg.Done()
 		scanner := bufio.NewScanner(r)
+		scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1 MB per line
 		for scanner.Scan() {
 			lines <- LogLine{Text: scanner.Text(), IsErr: isErr}
 		}
@@ -207,6 +208,7 @@ func RunBackground(cmd config.Command) (*BackgroundProc, error) {
 			scan := func(r interface{ Read([]byte) (int, error) }, isErr bool) {
 				defer wg.Done()
 				scanner := bufio.NewScanner(r)
+				scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1 MB per line
 				for scanner.Scan() {
 					lines <- LogLine{Text: scanner.Text(), IsErr: isErr}
 				}
