@@ -402,6 +402,100 @@ func TestAppModel_LaunchPersistsLastIndex(t *testing.T) {
 	}
 }
 
+// ── handoffMsg dispatch (Bug fix: handoffMsg was silently dropped) ────────────
+//
+// Before the fix, AppModel.Update had no case for handoffMsg, so selecting a
+// handoff command would set quitting=true but never store the command. The TUI
+// would exit and HandleHandoff would never be called, leaving the terminal hung.
+
+// TestAppModel_HandoffMsg_SetsHandoffCmd verifies that receiving a handoffMsg
+// stores the command in handoffCmd and does NOT leave it nil.
+func TestAppModel_HandoffMsg_SetsHandoffCmd(t *testing.T) {
+	cfg := appCfg(config.UIModeList, config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
+	m := NewApp(cfg)
+	sel := cfg.Commands[0]
+	m = updateApp(m, handoffMsg{cmd: sel})
+	if m.handoffCmd == nil {
+		t.Fatal("handoffMsg should set handoffCmd; got nil — handoff would have been silently dropped")
+	}
+	if m.handoffCmd.Name != "Dev" {
+		t.Errorf("handoffCmd.Name: got %q, want Dev", m.handoffCmd.Name)
+	}
+}
+
+// TestAppModel_HandoffMsg_SetsQuitting verifies the model quits after handoffMsg.
+func TestAppModel_HandoffMsg_SetsQuitting(t *testing.T) {
+	cfg := appCfg(config.UIModeList, config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
+	m := NewApp(cfg)
+	sel := cfg.Commands[0]
+
+	// The tea.Quit cmd itself won't run here, but quitting is set through the
+	// normal enter-key path before the handoffMsg is dispatched.
+	m = updateApp(m, handoffMsg{cmd: sel})
+	// After handling handoffMsg, the model should be in a quitting state.
+	// quitting may already be true from the enter-key launch path; we just
+	// verify the model is not in stateOutput or stateBG.
+	if m.state == stateOutput || m.state == stateBG {
+		t.Errorf("after handoffMsg: unexpected state %d (should not enter output/bg view)", m.state)
+	}
+}
+
+// TestAppModel_HandoffMsg_CommandNamePreserved verifies multi-step handoff commands
+// are preserved intact through the message round-trip.
+func TestAppModel_HandoffMsg_CommandNamePreserved(t *testing.T) {
+	multiStep := config.Command{
+		Name:     "Setup",
+		Commands: []string{"npm install", "npm run dev"},
+		RunMode:  config.RunModeHandoff,
+	}
+	cfg := appCfg(config.UIModeList, config.RunModeHandoff, multiStep)
+	m := NewApp(cfg)
+	m = updateApp(m, handoffMsg{cmd: multiStep})
+	if m.handoffCmd == nil {
+		t.Fatal("handoffCmd should not be nil for multi-step handoff")
+	}
+	steps := m.handoffCmd.Steps()
+	if len(steps) != 2 {
+		t.Fatalf("handoffCmd.Steps(): got %d steps, want 2", len(steps))
+	}
+	if steps[0] != "npm install" || steps[1] != "npm run dev" {
+		t.Errorf("handoffCmd steps: got %v", steps)
+	}
+}
+
+// TestAppModel_HandoffMsg_NilByDefaultBeforeLaunch verifies handoffCmd starts nil.
+func TestAppModel_HandoffMsg_NilByDefaultBeforeLaunch(t *testing.T) {
+	cfg := appCfg(config.UIModeList, config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
+	m := NewApp(cfg)
+	if m.handoffCmd != nil {
+		t.Error("handoffCmd should be nil before any command is selected")
+	}
+}
+
+// TestAppModel_EnterOnHandoffCmd_HandoffCmdSetAfterMsg verifies the full
+// enter-key → launch → handoffMsg path ends with handoffCmd populated.
+// This reproduces the exact hang scenario: user presses enter on a handoff
+// command; previously the terminal would hang because handoffCmd was never set.
+func TestAppModel_EnterOnHandoffCmd_HandoffCmdSetAfterMsg(t *testing.T) {
+	cfg := appCfg(config.UIModeList, config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
+	m := NewApp(cfg)
+
+	// Step 1: press enter — this calls launch() which emits tea.Sequence(
+	// tea.ExitAltScreen, handoffMsg{…}). The cmd is returned but not executed
+	// in unit tests, so we must deliver the handoffMsg manually (as Bubble Tea
+	// would in a real program).
+	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	// At this point quitting=true but handoffCmd is still nil — the message
+	// hasn't been dispatched yet. Simulate Bubble Tea delivering handoffMsg.
+	sel := cfg.Commands[0]
+	m = updateApp(m, handoffMsg{cmd: sel})
+
+	if m.handoffCmd == nil {
+		t.Fatal("after enter + handoffMsg: handoffCmd is nil — HandleHandoff would never be called")
+	}
+}
+
 // ── HandleHandoff ─────────────────────────────────────────────────────────────
 
 func TestHandleHandoff_SuccessfulCommandReturnsNil(t *testing.T) {

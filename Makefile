@@ -61,32 +61,40 @@ build: ## Build for the current platform → dist/
 .PHONY: build-all
 build-all: ## Cross-compile for all platforms → dist/
 	@$(MKDIR)
-	@$(foreach PLATFORM,$(PLATFORMS), \
-		$(eval OS   := $(word 1,$(subst /, ,$(PLATFORM)))) \
-		$(eval ARCH := $(word 2,$(subst /, ,$(PLATFORM)))) \
-		echo "Building $(BINARY) for $(OS)/$(ARCH)…"; \
-		GOOS=$(OS) GOARCH=$(ARCH) $(GOBUILD) \
-			-o $(call bin_name,$(PLATFORM)) \
-			$(MAIN_PKG); \
-	)
+	$(call build_for,linux,amd64)
+	$(call build_for,linux,arm64)
+	$(call build_for,darwin,amd64)
+	$(call build_for,darwin,arm64)
+	$(call build_for,windows,amd64)
 	@echo "All binaries written to $(DIST_DIR)/"
+
+# Cross-platform helper for setting GOOS/GOARCH (Windows cmd vs Unix shell)
+ifeq ($(OS),Windows_NT)
+  define build_for
+	@echo "Building $(BINARY) for $(1)/$(2)…" && set "GOOS=$(1)" && set "GOARCH=$(2)" && $(GOBUILD) -o $(call bin_name,$(1)/$(2)) $(MAIN_PKG)
+  endef
+else
+  define build_for
+	@echo "Building $(BINARY) for $(1)/$(2)…" && GOOS=$(1) GOARCH=$(2) $(GOBUILD) -o $(call bin_name,$(1)/$(2)) $(MAIN_PKG)
+  endef
+endif
 
 .PHONY: build-linux
 build-linux: ## Build Linux amd64 + arm64 binaries
 	@$(MKDIR)
-	GOOS=linux GOARCH=amd64  $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_linux_amd64  $(MAIN_PKG)
-	GOOS=linux GOARCH=arm64  $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_linux_arm64  $(MAIN_PKG)
+	$(call build_for,linux,amd64)
+	$(call build_for,linux,arm64)
 
 .PHONY: build-darwin
 build-darwin: ## Build macOS amd64 + arm64 (Apple Silicon) binaries
 	@$(MKDIR)
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_darwin_amd64 $(MAIN_PKG)
-	GOOS=darwin GOARCH=arm64 $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_darwin_arm64 $(MAIN_PKG)
+	$(call build_for,darwin,amd64)
+	$(call build_for,darwin,arm64)
 
 .PHONY: build-windows
 build-windows: ## Build Windows amd64 binary
 	@$(MKDIR)
-	GOOS=windows GOARCH=amd64 $(GOBUILD) -o $(DIST_DIR)/$(BINARY)_windows_amd64.exe $(MAIN_PKG)
+	$(call build_for,windows,amd64)
 
 # ── Test ──────────────────────────────────────────────────────────────────────
 

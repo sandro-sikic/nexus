@@ -1,6 +1,7 @@
 package runner_test
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -716,6 +717,122 @@ done:
 	}
 	if foundStepTwo {
 		t.Errorf("step-two output should not appear after step-one failure, got: %v", collected)
+	}
+}
+
+// ── Large-line scanner buffer ─────────────────────────────────────────────────
+//
+// These tests exercise the 1 MB scanner buffer added to streamOne and
+// RunBackground. Before the fix, bufio.Scanner's default 64 KB limit would
+// cause it to silently stop reading, leaving the channel open and the UI hung.
+
+// largeLine returns a shell command that prints a single line of `n` '*' bytes.
+// On Windows the command must survive cmd /C quoting, so single-quotes are
+// avoided and PowerShell is called without extra shell quoting.
+func largeLine(n int) string {
+	if runtime.GOOS == "windows" {
+		// cmd /C passes this directly to PowerShell. No inner quotes needed.
+		return fmt.Sprintf("powershell -NoProfile -Command Write-Host([string]::new([char]42,%d))", n)
+	}
+	return fmt.Sprintf("python3 -c \"import sys; sys.stdout.write('*'*%d+'\\n')\"", n)
+}
+
+func TestStream_LargeLineIsReceived(t *testing.T) {
+	// 256 KB line — well above the old 64 KB default.
+	const lineSize = 256 * 1024
+	lines := make(chan runner.LogLine, 4)
+	cmd := config.Command{Name: "large", Command: largeLine(lineSize), RunMode: config.RunModeStream}
+	if err := runner.Stream(cmd, lines); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	timeout := time.After(15 * time.Second)
+	var got []runner.LogLine
+	for {
+		select {
+		case l, ok := <-lines:
+			if !ok {
+				goto done
+			}
+			got = append(got, l)
+		case <-timeout:
+			t.Fatal("timed out — channel never closed (scanner may have blocked on large line)")
+		}
+	}
+done:
+	// At least one line should have arrived and be close to the expected size.
+	found := false
+	for _, l := range got {
+		if len(l.Text) >= lineSize/2 {
+			found = true
+		}
+	}
+	if !found {
+		sizes := make([]int, len(got))
+		for i, l := range got {
+			sizes[i] = len(l.Text)
+		}
+		t.Errorf("expected a line of ≥%d bytes; got line sizes: %v", lineSize/2, sizes)
+	}
+}
+
+func TestStream_LargeLine_ChannelClosedAfterExit(t *testing.T) {
+	// Verify the channel is always closed even for a large-line command —
+	// previously the scanner would stall and the channel would stay open.
+	const lineSize = 256 * 1024
+	lines := make(chan runner.LogLine, 4)
+	cmd := config.Command{Name: "large-close", Command: largeLine(lineSize), RunMode: config.RunModeStream}
+	if err := runner.Stream(cmd, lines); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	timeout := time.After(15 * time.Second)
+	for {
+		select {
+		case _, ok := <-lines:
+			if !ok {
+				return // closed as expected
+			}
+		case <-timeout:
+			t.Fatal("channel was not closed after large-line process exited")
+		}
+	}
+}
+
+func TestRunBackground_LargeLineIsReceived(t *testing.T) {
+	const lineSize = 256 * 1024
+	cmd := config.Command{Name: "bg-large", Command: largeLine(lineSize), RunMode: config.RunModeBackground}
+	proc, err := runner.RunBackground(cmd)
+	if err != nil {
+		t.Fatalf("RunBackground error: %v", err)
+	}
+
+	timeout := time.After(15 * time.Second)
+	var got []runner.LogLine
+	for {
+		select {
+		case l, ok := <-proc.Lines:
+			if !ok {
+				goto done
+			}
+			got = append(got, l)
+		case <-timeout:
+			t.Fatal("timed out — background channel never closed (scanner may have blocked)")
+		}
+	}
+done:
+	found := false
+	for _, l := range got {
+		if len(l.Text) >= lineSize/2 {
+			found = true
+		}
+	}
+	if !found {
+		sizes := make([]int, len(got))
+		for i, l := range got {
+			sizes[i] = len(l.Text)
+		}
+		t.Errorf("background: expected a line of ≥%d bytes; got line sizes: %v", lineSize/2, sizes)
 	}
 }
 
