@@ -949,7 +949,7 @@ func (m WizardModel) viewSummary() string {
 	var b strings.Builder
 	b.WriteString(wizTitleStyle.Render("Runner — Summary") + "\n")
 	b.WriteString(wizSeparator + "\n\n")
-	b.WriteString(wizSubtitleStyle.Render("  Review your configuration before saving.\n\n"))
+	b.WriteString(wizSubtitleStyle.Render("  Review your configuration before saving.") + "\n")
 
 	b.WriteString(wizLabelStyle.Render("  Title      ") + wizValueStyle.Render(m.cfgTitle) + "\n")
 	b.WriteString(wizLabelStyle.Render("  UI Mode    ") + wizValueStyle.Render(string(m.cfgUIMode)) + "\n")
