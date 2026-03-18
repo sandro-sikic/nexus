@@ -34,6 +34,12 @@ jobs:
       - name: Create zip archive
         run: zip -j dist/nexus_all.zip dist/nexus_*
 
+      - name: Delete existing latest release
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
