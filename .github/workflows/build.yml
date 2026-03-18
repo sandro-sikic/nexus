@@ -1,0 +1,68 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'web/**'
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build all platforms
+        run: make build-all
+
+      - name: Create zip archive
+        run: zip -j dist/nexus.zip dist/nexus_*
+
+      - name: Upload linux/amd64
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus_linux_amd64
+          path: dist/nexus_linux_amd64
+
+      - name: Upload linux/arm64
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus_linux_arm64
+          path: dist/nexus_linux_arm64
+
+      - name: Upload darwin/amd64
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus_darwin_amd64
+          path: dist/nexus_darwin_amd64
+
+      - name: Upload darwin/arm64
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus_darwin_arm64
+          path: dist/nexus_darwin_arm64
+
+      - name: Upload windows/amd64
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus_windows_amd64
+          path: dist/nexus_windows_amd64.exe
+
+      - name: Upload zip (all platforms)
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus
+          path: dist/nexus.zip
