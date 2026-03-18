@@ -5,8 +5,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"runner/config"
-	"runner/runner"
+	"nexus/config"
+	"nexus/runner"
 )
 
 type appState int

@@ -1,6 +1,6 @@
 # ── Config ────────────────────────────────────────────────────────────────────
-BINARY := runner
-MODULE := runner
+BINARY := nexus
+MODULE := nexus
 
 # Use = (recursive) instead of := (immediate) so these are evaluated only when
 # a build target actually runs, never at parse time.  This prevents hangs when
@@ -155,7 +155,7 @@ clean: ## Remove the dist/ directory
 # ── Run (dev shortcut) ────────────────────────────────────────────────────────
 
 .PHONY: run
-run: ## Run directly with go run (uses runner.yaml in CWD)
+run: ## Run directly with go run (uses nexus.yaml in CWD)
 	$(GO) run $(MAIN_PKG)
 
 .PHONY: run-config

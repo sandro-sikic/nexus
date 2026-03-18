@@ -6,34 +6,34 @@ import (
 	"fmt"
 	"os"
 
-	"runner/config"
-	"runner/ui"
+	"nexus/config"
+	"nexus/ui"
 )
 
 func main() {
-	cfgPath := flag.String("config", "runner.yaml", "path to runner config file")
+	cfgPath := flag.String("config", "nexus.yaml", "path to nexus config file")
 	wizard := flag.Bool("wizard", false, "open the setup/edit wizard before launching")
 	flag.Parse()
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		if !errors.Is(err, config.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "runner: %v\n", err)
+			fmt.Fprintf(os.Stderr, "nexus: %v\n", err)
 			os.Exit(1)
 		}
 
 		// Config file missing — launch the setup wizard (create mode).
 		result, wizErr := ui.RunWizard(*cfgPath)
 		if wizErr != nil {
-			fmt.Fprintf(os.Stderr, "runner: wizard error: %v\n", wizErr)
+			fmt.Fprintf(os.Stderr, "nexus: wizard error: %v\n", wizErr)
 			os.Exit(1)
 		}
 		if result.Aborted {
-			fmt.Fprintln(os.Stderr, "runner: setup aborted.")
+			fmt.Fprintln(os.Stderr, "nexus: setup aborted.")
 			os.Exit(0)
 		}
 		if result.SaveErr != "" {
-			fmt.Fprintf(os.Stderr, "runner: could not save config: %v\n", result.SaveErr)
+			fmt.Fprintf(os.Stderr, "nexus: could not save config: %v\n", result.SaveErr)
 			os.Exit(1)
 		}
 
@@ -43,15 +43,15 @@ func main() {
 		// Config exists and --wizard was requested — launch in edit mode.
 		result, wizErr := ui.RunWizardEdit(*cfgPath, cfg)
 		if wizErr != nil {
-			fmt.Fprintf(os.Stderr, "runner: wizard error: %v\n", wizErr)
+			fmt.Fprintf(os.Stderr, "nexus: wizard error: %v\n", wizErr)
 			os.Exit(1)
 		}
 		if result.Aborted {
-			fmt.Fprintln(os.Stderr, "runner: edit aborted.")
+			fmt.Fprintln(os.Stderr, "nexus: edit aborted.")
 			os.Exit(0)
 		}
 		if result.SaveErr != "" {
-			fmt.Fprintf(os.Stderr, "runner: could not save config: %v\n", result.SaveErr)
+			fmt.Fprintf(os.Stderr, "nexus: could not save config: %v\n", result.SaveErr)
 			os.Exit(1)
 		}
 
@@ -59,13 +59,13 @@ func main() {
 		// inheritance is re-applied correctly.
 		cfg, err = config.Load(*cfgPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "runner: %v\n", err)
+			fmt.Fprintf(os.Stderr, "nexus: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
 	if err := ui.Run(cfg, *cfgPath); err != nil {
-		fmt.Fprintf(os.Stderr, "runner: %v\n", err)
+		fmt.Fprintf(os.Stderr, "nexus: %v\n", err)
 		os.Exit(1)
 	}
 }

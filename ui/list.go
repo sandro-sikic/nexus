@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"runner/config"
+	"nexus/config"
 )
 
 // ListModel is a simple arrow-key navigable list.

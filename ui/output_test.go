@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"runner/config"
-	"runner/runner"
+	"nexus/config"
+	"nexus/runner"
 )
 
 // ── OutputModel construction ──────────────────────────────────────────────────

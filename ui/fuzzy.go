@@ -6,7 +6,7 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"runner/config"
+	"nexus/config"
 )
 
 // FuzzyModel provides a type-to-filter command selector.

@@ -1,7 +1,7 @@
 package ui
 
 // Wizard is a multi-step TUI that walks the user through creating or editing
-// a runner.yaml.
+// a nexus.yaml.
 //
 // CREATE flow (no existing config):
 //  1. Welcome notice
@@ -27,7 +27,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"runner/config"
+	"nexus/config"
 )
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -462,7 +462,7 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 	case wizStepTitle:
 		title := strings.TrimSpace(m.inputBuf)
 		if title == "" {
-			title = "Runner"
+			title = "Nexus"
 		}
 		m.cfgTitle = title
 		m.inputBuf = ""
@@ -740,9 +740,9 @@ func (m WizardModel) View() string {
 
 func (m WizardModel) viewWelcome() string {
 	var b strings.Builder
-	b.WriteString(wizTitleStyle.Render("Runner — Setup Wizard") + "\n")
+	b.WriteString(wizTitleStyle.Render("Nexus — Setup Wizard") + "\n")
 	b.WriteString(wizSeparator + "\n\n")
-	b.WriteString(wizWarningStyle.Render("  No runner.yaml found at the expected path.") + "\n\n")
+	b.WriteString(wizWarningStyle.Render("  No nexus.yaml found at the expected path.") + "\n\n")
 	b.WriteString(wizSubtitleStyle.Render(
 		"  This wizard will guide you through creating one.\n" +
 			"  You'll define global settings and at least one command.\n",
@@ -755,7 +755,7 @@ func (m WizardModel) viewWelcome() string {
 func (m WizardModel) viewEditHub() string {
 	var b strings.Builder
 
-	b.WriteString(wizTitleStyle.Render("Runner — Edit Configuration") + "\n")
+	b.WriteString(wizTitleStyle.Render("Nexus — Edit Configuration") + "\n")
 	b.WriteString(wizSeparator + "\n\n")
 
 	// ── Global settings summary ───────────────────────────────────────────
@@ -821,7 +821,7 @@ func (m WizardModel) viewEditHub() string {
 
 func (m WizardModel) viewTextInput(title, hint, placeholder string, optional bool) string {
 	var b strings.Builder
-	b.WriteString(wizTitleStyle.Render("Runner — "+title) + "\n")
+	b.WriteString(wizTitleStyle.Render("Nexus — "+title) + "\n")
 	b.WriteString(wizSeparator + "\n\n")
 	b.WriteString("  " + wizSubtitleStyle.Render(hint) + "\n\n")
 
@@ -849,7 +849,7 @@ func (m WizardModel) viewMoreCommands() string {
 	var b strings.Builder
 	idx := len(m.commands) + 1
 	stepNum := len(m.cmdExtraCommands) + 2 // first command is step 1
-	b.WriteString(wizTitleStyle.Render(fmt.Sprintf("Runner — Command #%d — Step %d", idx, stepNum)) + "\n")
+	b.WriteString(wizTitleStyle.Render(fmt.Sprintf("Nexus — Command #%d — Step %d", idx, stepNum)) + "\n")
 	b.WriteString(wizSeparator + "\n\n")
 
 	b.WriteString("  " + wizSubtitleStyle.Render("Commands added so far:") + "\n")
@@ -879,7 +879,7 @@ func (m WizardModel) viewMoreCommands() string {
 
 func (m WizardModel) viewOptionPicker(title, hint string, opts []wizOption) string {
 	var b strings.Builder
-	b.WriteString(wizTitleStyle.Render("Runner — "+title) + "\n")
+	b.WriteString(wizTitleStyle.Render("Nexus — "+title) + "\n")
 	b.WriteString(wizSeparator + "\n\n")
 	b.WriteString("  " + wizSubtitleStyle.Render(hint) + "\n\n")
 
@@ -905,7 +905,7 @@ func (m WizardModel) viewOptionPicker(title, hint string, opts []wizOption) stri
 
 func (m WizardModel) viewDeleteCmds() string {
 	var b strings.Builder
-	b.WriteString(wizTitleStyle.Render("Runner — Delete Commands") + "\n")
+	b.WriteString(wizTitleStyle.Render("Nexus — Delete Commands") + "\n")
 	b.WriteString(wizSeparator + "\n\n")
 	b.WriteString("  " + wizSubtitleStyle.Render("Mark commands to delete, then press enter to confirm.\n  At least one command must remain.") + "\n\n")
 
@@ -947,7 +947,7 @@ func (m WizardModel) viewDeleteCmds() string {
 
 func (m WizardModel) viewSummary() string {
 	var b strings.Builder
-	b.WriteString(wizTitleStyle.Render("Runner — Summary") + "\n")
+	b.WriteString(wizTitleStyle.Render("Nexus — Summary") + "\n")
 	b.WriteString(wizSeparator + "\n\n")
 	b.WriteString(wizSubtitleStyle.Render("  Review your configuration before saving.") + "\n")
 
@@ -989,7 +989,7 @@ func (m WizardModel) viewSummary() string {
 
 func (m WizardModel) viewDone() string {
 	var b strings.Builder
-	b.WriteString(wizTitleStyle.Render("Runner — Setup Complete") + "\n")
+	b.WriteString(wizTitleStyle.Render("Nexus — Setup Complete") + "\n")
 	b.WriteString(wizSeparator + "\n\n")
 
 	if m.saveErr != "" {
@@ -997,10 +997,10 @@ func (m WizardModel) viewDone() string {
 		b.WriteString(wizErrorStyle.Render("    "+m.saveErr) + "\n")
 	} else if m.editing {
 		b.WriteString(wizSuccessStyle.Render("  ✓ "+m.savePath+" updated successfully!") + "\n\n")
-		b.WriteString(wizSubtitleStyle.Render("  Runner will now start with your updated configuration.\n"))
+		b.WriteString(wizSubtitleStyle.Render("  Nexus will now start with your updated configuration.\n"))
 	} else {
 		b.WriteString(wizSuccessStyle.Render("  ✓ "+m.savePath+" created successfully!") + "\n\n")
-		b.WriteString(wizSubtitleStyle.Render("  Runner will now start with your new configuration.\n"))
+		b.WriteString(wizSubtitleStyle.Render("  Nexus will now start with your new configuration.\n"))
 	}
 
 	b.WriteString(wizHelpStyle.Render("\n  Press enter to continue"))
@@ -1016,7 +1016,7 @@ type WizardResult struct {
 	Config  *config.Config
 }
 
-// runWizardModel is the shared runner used by both RunWizard and RunWizardEdit.
+// runWizardModel is the shared executor used by both RunWizard and RunWizardEdit.
 func runWizardModel(m WizardModel) (WizardResult, error) {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	final, err := p.Run()

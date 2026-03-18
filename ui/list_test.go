@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"runner/config"
+	"nexus/config"
 )
 
 // helpers ─────────────────────────────────────────────────────────────────────

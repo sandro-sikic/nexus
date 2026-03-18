@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"runner/config"
+	"nexus/config"
 )
 
 // LogLine is a single line of output from a background process.

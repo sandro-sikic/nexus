@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"runner/config"
+	"nexus/config"
 )
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -373,7 +373,7 @@ func TestAppModel_UpdateBGDelegatesToBGModel(t *testing.T) {
 
 func TestAppModel_LaunchPersistsLastIndex(t *testing.T) {
 	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "runner.yaml")
+	cfgPath := filepath.Join(tmp, "nexus.yaml")
 
 	cfg := appCfg(config.UIModeList, config.RunModeStream,
 		streamCmd("First", "echo 1"),

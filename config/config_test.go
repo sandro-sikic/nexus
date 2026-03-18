@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"runner/config"
+	"nexus/config"
 )
 
 // writeTemp writes YAML content to a temp file and returns its path.
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
-	f, err := os.CreateTemp(t.TempDir(), "runner-*.yaml")
+	f, err := os.CreateTemp(t.TempDir(), "nexus-*.yaml")
 	if err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
@@ -26,7 +26,7 @@ func writeTemp(t *testing.T, content string) string {
 
 func TestLoad_FullConfig(t *testing.T) {
 	yaml := `
-title: "Test Runner"
+title: "Test Nexus"
 ui_mode: fuzzy
 run_mode: handoff
 commands:
@@ -42,8 +42,8 @@ commands:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.Title != "Test Runner" {
-		t.Errorf("title: got %q, want %q", cfg.Title, "Test Runner")
+	if cfg.Title != "Test Nexus" {
+		t.Errorf("title: got %q, want %q", cfg.Title, "Test Nexus")
 	}
 	if cfg.UIMode != config.UIModeFuzzy {
 		t.Errorf("ui_mode: got %q, want %q", cfg.UIMode, config.UIModeFuzzy)
@@ -83,8 +83,8 @@ func TestLoad_DefaultTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Title != "Runner" {
-		t.Errorf("default title: got %q, want %q", cfg.Title, "Runner")
+	if cfg.Title != "Nexus" {
+		t.Errorf("default title: got %q, want %q", cfg.Title, "Nexus")
 	}
 }
 
@@ -318,7 +318,7 @@ commands:
 }
 
 func TestSaveLastIndex_MissingFile(t *testing.T) {
-	err := config.SaveLastIndex("/nonexistent/path/runner.yaml", 0)
+	err := config.SaveLastIndex("/nonexistent/path/nexus.yaml", 0)
 	if err == nil {
 		t.Error("expected error for missing file")
 	}

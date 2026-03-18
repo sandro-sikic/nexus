@@ -1,4 +1,4 @@
-module runner
+module nexus
 
 go 1.24.2
 

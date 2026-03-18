@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"runner/config"
+	"nexus/config"
 )
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -286,7 +286,7 @@ func TestWizard_WelcomeView(t *testing.T) {
 	if !strings.Contains(v, "Wizard") {
 		t.Errorf("welcome view missing 'Wizard':\n%s", v)
 	}
-	if !strings.Contains(v, "runner.yaml") && !strings.Contains(v, "missing") && !strings.Contains(v, "No ") {
+	if !strings.Contains(v, "nexus.yaml") && !strings.Contains(v, "missing") && !strings.Contains(v, "No ") {
 		t.Errorf("welcome view should mention missing file:\n%s", v)
 	}
 }
@@ -306,13 +306,13 @@ func TestWizard_TitleTypingAndConfirm(t *testing.T) {
 	}
 }
 
-func TestWizard_TitleDefaultsToRunner(t *testing.T) {
+func TestWizard_TitleDefaultsToNexus(t *testing.T) {
 	m := NewWizard("x.yaml")
 	m = pressEnter(t, m) // welcome
 	// don't type anything
 	m = pressEnter(t, m)
-	if m.cfgTitle != "Runner" {
-		t.Errorf("empty title should default to 'Runner', got %q", m.cfgTitle)
+	if m.cfgTitle != "Nexus" {
+		t.Errorf("empty title should default to 'Nexus', got %q", m.cfgTitle)
 	}
 }
 
@@ -355,7 +355,7 @@ func TestWizard_UIModeDefaultIsFirst(t *testing.T) {
 func TestWizard_UIModePicker_List(t *testing.T) {
 	m := NewWizard("x.yaml")
 	m = pressEnter(t, m)
-	m = pressEnter(t, m) // title (blank → "Runner")
+	m = pressEnter(t, m) // title (blank → "Nexus")
 	// cursor at 0 = list
 	m = pressEnter(t, m)
 	if m.cfgUIMode != config.UIModeList {
@@ -650,7 +650,7 @@ func TestWizard_SummaryViewContainsAllFields(t *testing.T) {
 }
 
 func TestWizard_SummaryViewContainsSavePath(t *testing.T) {
-	m := NewWizard("my/path/runner.yaml")
+	m := NewWizard("my/path/nexus.yaml")
 	m = pressEnter(t, m)
 	m = pressEnter(t, m)
 	m = pressEnter(t, m)
@@ -659,13 +659,13 @@ func TestWizard_SummaryViewContainsSavePath(t *testing.T) {
 	m = pressDown(t, m)     // no
 	m = pressEnter(t, m)    // → delete step
 	m = confirmDelete(t, m) // → summary
-	if !strings.Contains(m.View(), "my/path/runner.yaml") {
+	if !strings.Contains(m.View(), "my/path/nexus.yaml") {
 		t.Errorf("summary missing save path:\n%s", m.View())
 	}
 }
 
 func TestWizard_SaveWritesFile(t *testing.T) {
-	tmp := filepath.Join(t.TempDir(), "runner.yaml")
+	tmp := filepath.Join(t.TempDir(), "nexus.yaml")
 	m := NewWizard(tmp)
 	m = pressEnter(t, m) // welcome
 	m = typeText(t, m, "Save Test")
@@ -704,7 +704,7 @@ func TestWizard_SaveWritesFile(t *testing.T) {
 
 func TestWizard_SaveErrorRecorded(t *testing.T) {
 	// Use an unwritable path to force an error
-	m := NewWizard("/nonexistent/deeply/nested/path/runner.yaml")
+	m := NewWizard("/nonexistent/deeply/nested/path/nexus.yaml")
 	m = pressEnter(t, m)
 	m = pressEnter(t, m)
 	m = pressEnter(t, m)
@@ -822,9 +822,9 @@ func TestWizard_ViewDoneSuccess(t *testing.T) {
 	m := NewWizard("x.yaml")
 	m.step = wizStepDone
 	m.saved = true
-	m.savePath = "runner.yaml"
-	v := m.View()
-	if !strings.Contains(v, "runner.yaml") {
+	m.savePath = "nexus.yaml"
+	v := m.viewSummary()
+	if !strings.Contains(v, "nexus.yaml") {
 		t.Errorf("done view missing file path:\n%s", v)
 	}
 }
@@ -1099,7 +1099,7 @@ func TestWizard_DeleteStep_ViewShowsValidationError(t *testing.T) {
 }
 
 func TestWizard_DeleteAndSave_FileHasCorrectCommands(t *testing.T) {
-	tmp := filepath.Join(t.TempDir(), "runner.yaml")
+	tmp := filepath.Join(t.TempDir(), "nexus.yaml")
 	m := NewWizard(tmp)
 	m = pressEnter(t, m) // welcome
 	m = typeText(t, m, "Del Test")
@@ -1217,8 +1217,8 @@ func TestWizardEdit_HubViewMentionsEdit(t *testing.T) {
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	v := m.View()
-	if strings.Contains(v, "No runner.yaml") {
-		t.Error("hub should not say 'No runner.yaml found'")
+	if strings.Contains(v, "No nexus.yaml") {
+		t.Error("hub should not say 'No nexus.yaml found'")
 	}
 	if !strings.Contains(v, "Edit") && !strings.Contains(v, "edit") {
 		t.Errorf("hub view should mention editing:\n%s", v)
@@ -1326,7 +1326,7 @@ func TestWizardEdit_DoneViewSaysUpdated(t *testing.T) {
 	m.step = wizStepDone
 	m.saved = true
 	m.editing = true
-	m.savePath = "runner.yaml"
+	m.savePath = "nexus.yaml"
 	v := m.View()
 	if !strings.Contains(v, "updated") {
 		t.Errorf("edit done view should say 'updated':\n%s", v)
@@ -1334,7 +1334,7 @@ func TestWizardEdit_DoneViewSaysUpdated(t *testing.T) {
 }
 
 func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
-	tmp := filepath.Join(t.TempDir(), "runner.yaml")
+	tmp := filepath.Join(t.TempDir(), "nexus.yaml")
 
 	// Write initial config.
 	initial := &config.Config{
@@ -1631,7 +1631,7 @@ func TestEditHub_CursorClampsAfterDelete(t *testing.T) {
 }
 
 func TestEditHub_SaveAndVerifyFile(t *testing.T) {
-	tmp := filepath.Join(t.TempDir(), "runner.yaml")
+	tmp := filepath.Join(t.TempDir(), "nexus.yaml")
 	existing := &config.Config{
 		Title:   "Orig",
 		UIMode:  config.UIModeList,

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"runner/config"
+	"nexus/config"
 )
 
 // helpers ─────────────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ func TestFuzzyModel_NoMatchShowsEmpty(t *testing.T) {
 }
 
 func TestFuzzyModel_MatchesOnDescription(t *testing.T) {
-	c := config.Command{Name: "Runner", Description: "executes things", Command: "run", RunMode: config.RunModeStream}
+	c := config.Command{Name: "Nexus", Description: "executes things", Command: "run", RunMode: config.RunModeStream}
 	m := NewFuzzyModel(fuzzyCfg(c))
 	m, _ = m.Update(runesMsg("exec"))
 	if len(m.filtered) != 1 {
@@ -193,7 +193,7 @@ func TestFuzzyModel_MatchesOnDescription(t *testing.T) {
 }
 
 func TestFuzzyModel_MatchesOnCommand(t *testing.T) {
-	c := config.Command{Name: "Runner", Description: "desc", Command: "npm run dev", RunMode: config.RunModeStream}
+	c := config.Command{Name: "Nexus", Description: "desc", Command: "npm run dev", RunMode: config.RunModeStream}
 	m := NewFuzzyModel(fuzzyCfg(c))
 	m, _ = m.Update(runesMsg("nrd"))
 	if len(m.filtered) != 1 {

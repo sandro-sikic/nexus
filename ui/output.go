@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"runner/config"
-	"runner/runner"
+	"nexus/config"
+	"nexus/runner"
 )
 
 // outputLineMsg carries a single log line into the model.

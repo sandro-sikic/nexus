@@ -52,7 +52,7 @@ func (c Command) Steps() []string {
 	return nil
 }
 
-// Config is the root structure of runner.yaml.
+// Config is the root structure of nexus.yaml.
 type Config struct {
 	Title     string    `yaml:"title"`
 	UIMode    UIMode    `yaml:"ui_mode"`
@@ -107,7 +107,7 @@ func Load(path string) (*Config, error) {
 		cfg.RunMode = RunModeStream
 	}
 	if cfg.Title == "" {
-		cfg.Title = "Runner"
+		cfg.Title = "Nexus"
 	}
 
 	// Per-command defaults

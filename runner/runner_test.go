@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"runner/config"
-	"runner/runner"
+	"nexus/config"
+	"nexus/runner"
 )
 
 // echoCmd returns a config.Command that simply prints the given text to stdout.
