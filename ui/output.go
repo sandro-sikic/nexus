@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"nexus/config"
@@ -19,21 +20,25 @@ type outputDoneMsg struct{ err error }
 
 // OutputModel streams command output inside the TUI.
 type OutputModel struct {
-	cmd    config.Command
-	lines  []runner.LogLine
-	done   bool
-	err    error
-	width  int
-	height int
-	offset int // scroll offset
+	cmd     config.Command
+	lines   []runner.LogLine
+	done    bool
+	err     error
+	width   int
+	height  int
+	offset  int // scroll offset
+	spinner spinner.Model
 }
 
 func NewOutputModel(cmd config.Command) OutputModel {
-	return OutputModel{cmd: cmd, width: 80, height: 24}
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	return OutputModel{cmd: cmd, width: 80, height: 24, spinner: s}
 }
 
 func (m OutputModel) Init() tea.Cmd {
-	return m.startStream()
+	return tea.Batch(m.spinner.Tick, m.startStream())
 }
 
 func (m OutputModel) startStream() tea.Cmd {
@@ -69,6 +74,11 @@ func (m OutputModel) Update(msg tea.Msg) (OutputModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 
 	case streamStartMsg:
 		return m, tickCmd(msg.lines)
@@ -153,7 +163,7 @@ func (m OutputModel) View() string {
 		}
 		b.WriteString(helpStyle.Render("\nPress q or esc to go back"))
 	} else {
-		b.WriteString(helpStyle.Render("\n↑/↓ to scroll  •  running…"))
+		b.WriteString(helpStyle.Render(fmt.Sprintf("\n↑/↓ to scroll  •  %s running…", m.spinner.View())))
 	}
 
 	return b.String()
@@ -161,14 +171,15 @@ func (m OutputModel) View() string {
 
 // BackgroundModel shows a background process log panel.
 type BackgroundModel struct {
-	cmd    config.Command
-	proc   *runner.BackgroundProc
-	lines  []runner.LogLine
-	done   bool
-	width  int
-	height int
-	offset int
-	ticker *time.Ticker
+	cmd     config.Command
+	proc    *runner.BackgroundProc
+	lines   []runner.LogLine
+	done    bool
+	width   int
+	height  int
+	offset  int
+	ticker  *time.Ticker
+	spinner spinner.Model
 }
 
 func NewBackgroundModel(cmd config.Command) (BackgroundModel, error) {
@@ -176,16 +187,20 @@ func NewBackgroundModel(cmd config.Command) (BackgroundModel, error) {
 	if err != nil {
 		return BackgroundModel{}, err
 	}
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	return BackgroundModel{
-		cmd:    cmd,
-		proc:   proc,
-		width:  80,
-		height: 24,
+		cmd:     cmd,
+		proc:    proc,
+		width:   80,
+		height:  24,
+		spinner: s,
 	}, nil
 }
 
 func (m BackgroundModel) Init() tea.Cmd {
-	return bgTickCmd(m.proc.Lines)
+	return tea.Batch(m.spinner.Tick, bgTickCmd(m.proc.Lines))
 }
 
 func bgTickCmd(lines chan runner.LogLine) tea.Cmd {
@@ -206,6 +221,10 @@ func (m BackgroundModel) Update(msg tea.Msg) (BackgroundModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case struct {
 		line  runner.LogLine
 		lines chan runner.LogLine
@@ -277,6 +296,10 @@ func (m BackgroundModel) View() string {
 		}
 	}
 
-	b.WriteString(helpStyle.Render("\n↑/↓ to scroll  •  q/esc to go back"))
+	if !m.done {
+		b.WriteString(helpStyle.Render(fmt.Sprintf("\n↑/↓ to scroll  •  %s  •  q/esc to go back", m.spinner.View())))
+	} else {
+		b.WriteString(helpStyle.Render("\n↑/↓ to scroll  •  q/esc to go back"))
+	}
 	return b.String()
 }
