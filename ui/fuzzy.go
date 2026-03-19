@@ -341,15 +341,31 @@ func (m FuzzyModel) cursorLine() int {
 		return line
 	}
 
-	// Grouped view: walk entries to find the rendered line of gCursor.
+	// Grouped view: walk entries to find the rendered line of gCursor,
+	// accounting for blank lines inserted before group headers (except the first).
 	line := 0
+	headerCount := 0
 	for i, e := range m.entries {
+		if e.isHeader {
+			if headerCount > 0 {
+				// blank line before this header (except for the very first header)
+				line++
+			}
+			headerCount++
+		}
+		// Now line points to the start of this entry's content (header line if header,
+		// name line if name). Since gCursor never points to a header, we can safely
+		// return line when we hit the cursor.
 		if i == m.gCursor {
 			return line
 		}
-		line++ // header or name line
-		if !e.isHeader && len(e.cmd.Steps()) > 0 {
-			line++ // cmd preview line
+		if e.isHeader {
+			line++ // consume header line
+		} else {
+			line++ // consume name line
+			if len(e.cmd.Steps()) > 0 {
+				line++ // consume preview line
+			}
 		}
 	}
 	return line
