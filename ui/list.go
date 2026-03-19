@@ -19,14 +19,10 @@ type ListModel struct {
 }
 
 func NewListModel(cfg *config.Config) ListModel {
-	cursor := cfg.LastIndex
-	if cursor < 0 || cursor >= len(cfg.Commands) {
-		cursor = 0
-	}
 	return ListModel{
 		title:    cfg.Title,
 		commands: cfg.Commands,
-		cursor:   cursor,
+		cursor:   0,
 		width:    80,
 		height:   24,
 	}

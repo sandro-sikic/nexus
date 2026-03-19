@@ -53,10 +53,9 @@ You can also launch the wizard at any time:
 nexus --wizard
 ```
 
-The wizard walks you through three steps:
-- **Project Details** — Name your configuration and set basic preferences
-- **Command Groups** — Organize commands into logical categories
-- **Run Modes** — Choose execution behavior for each command
+The wizard walks you through:
+- **Project Details** — Name your configuration and choose a default run mode
+- **Commands** — Add commands with an optional group label and per-command run mode override
 
 It generates a complete `nexus.yaml` for you — no manual YAML editing required.
 
@@ -65,16 +64,20 @@ It generates a complete `nexus.yaml` for you — no manual YAML editing required
 Run Nexus anytime, select a command from the TUI menu, and execute with a single keystroke:
 
 ```
-⚡ Nexus v1.0.0
-Select a command to execute:
+My Project Nexus
 
-▶ 1  Development Server    Start the development server
-  2  Start App             Start the production application
-  3  Database Migration    Run database migrations
-  4  Docker Up             Start all Docker containers
-  5  Docker Logs           View Docker container logs
+> █
 
-↑↓ Navigate     Enter Execute     Q Quit
+── Development ──
+▶ Dev Server        Start the development server with hot reload
+    $ npm run dev
+  Watch Tests       Run tests in watch mode
+
+── Build ──
+  Build             Production build
+  Preview           Preview the production build locally
+
+type to filter  •  ↑/↓ navigate  •  enter select  •  q quit
 ```
 
 ---
@@ -85,7 +88,6 @@ All commands are defined in a single `nexus.yaml` file:
 
 ```yaml
 title: "My Project Nexus"
-ui_mode: group        # show commands organized by group
 run_mode: stream      # default: stream output inside the TUI
 
 commands:

@@ -13,7 +13,6 @@ import (
 func groupCfg(cmds ...config.Command) *config.Config {
 	return &config.Config{
 		Title:    "Group Test",
-		UIMode:   config.UIModeGroup,
 		RunMode:  config.RunModeStream,
 		Commands: cmds,
 	}

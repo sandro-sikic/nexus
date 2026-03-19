@@ -5,8 +5,7 @@ import "github.com/charmbracelet/lipgloss"
 var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("212")).
-			MarginBottom(1)
+			Foreground(lipgloss.Color("212"))
 
 	selectedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("212")).
@@ -24,15 +23,13 @@ var (
 
 	groupHeaderStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("214")).
-				MarginTop(1)
+				Foreground(lipgloss.Color("214"))
 
 	errorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("196"))
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238")).
-			MarginTop(1)
+			Foreground(lipgloss.Color("238"))
 
 	cursorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("212"))

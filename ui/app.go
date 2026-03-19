@@ -23,10 +23,8 @@ type AppModel struct {
 	cfgPath string // path to the config file, used to persist state
 	state   appState
 
-	// Menu sub-models (only one active per ui_mode)
-	list  ListModel
+	// Menu — always the combined fuzzy+group model
 	fuzzy FuzzyModel
-	group GroupModel
 
 	// Output sub-models
 	output OutputModel
@@ -42,41 +40,15 @@ func NewApp(cfg *config.Config) AppModel {
 }
 
 func newApp(cfg *config.Config, cfgPath string) AppModel {
-	m := AppModel{cfg: cfg, cfgPath: cfgPath}
-	switch cfg.UIMode {
-	case config.UIModeList:
-		m.list = NewListModel(cfg)
-	case config.UIModeFuzzy:
-		m.fuzzy = NewFuzzyModel(cfg)
-	case config.UIModeGroup:
-		m.group = NewGroupModel(cfg)
+	return AppModel{
+		cfg:     cfg,
+		cfgPath: cfgPath,
+		fuzzy:   NewFuzzyModel(cfg),
 	}
-	return m
 }
 
 func (m AppModel) Init() tea.Cmd {
-	switch m.cfg.UIMode {
-	case config.UIModeList:
-		return m.list.Init()
-	case config.UIModeFuzzy:
-		return m.fuzzy.Init()
-	case config.UIModeGroup:
-		return m.group.Init()
-	}
-	return nil
-}
-
-// selectedCmd returns whichever menu model has a selection.
-func (m *AppModel) selectedCmd() *config.Command {
-	switch m.cfg.UIMode {
-	case config.UIModeList:
-		return m.list.Selected()
-	case config.UIModeFuzzy:
-		return m.fuzzy.Selected()
-	case config.UIModeGroup:
-		return m.group.Selected()
-	}
-	return nil
+	return m.fuzzy.Init()
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -90,17 +62,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// In output/bg state, go back to menu
 			m.state = stateMenu
-			// Reset selections
-			m.list.selected = nil
 			m.fuzzy.selected = nil
-			m.group.selected = nil
 			return m, nil
 		case "esc":
 			if m.state != stateMenu {
 				m.state = stateMenu
-				m.list.selected = nil
 				m.fuzzy.selected = nil
-				m.group.selected = nil
 				return m, nil
 			}
 		}
@@ -125,17 +92,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m AppModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	switch m.cfg.UIMode {
-	case config.UIModeList:
-		m.list, cmd = m.list.Update(msg)
-	case config.UIModeFuzzy:
-		m.fuzzy, cmd = m.fuzzy.Update(msg)
-	case config.UIModeGroup:
-		m.group, cmd = m.group.Update(msg)
-	}
+	m.fuzzy, cmd = m.fuzzy.Update(msg)
 
-	// Check if a command was selected
-	if sel := m.selectedCmd(); sel != nil {
+	if sel := m.fuzzy.Selected(); sel != nil {
 		return m.launch(*sel)
 	}
 
@@ -143,12 +102,6 @@ func (m AppModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) launch(sel config.Command) (tea.Model, tea.Cmd) {
-	// Persist the selected index for list mode so the next run pre-selects it.
-	if m.cfg.UIMode == config.UIModeList && m.cfgPath != "" {
-		// Best-effort: ignore save errors so a read-only config doesn't block execution.
-		_ = config.SaveLastIndex(m.cfgPath, m.list.cursor)
-	}
-
 	switch sel.RunMode {
 	case config.RunModeHandoff:
 		// For handoff we need to quit the TUI first, then exec
@@ -205,16 +158,27 @@ func (m AppModel) View() string {
 		return m.bg.View()
 	}
 
-	// Menu
-	switch m.cfg.UIMode {
-	case config.UIModeList:
-		return m.list.View()
-	case config.UIModeFuzzy:
-		return m.fuzzy.View()
-	case config.UIModeGroup:
-		return m.group.View()
+	return m.fuzzy.View()
+}
+
+// RunFirstMatch fuzzy-matches query against all commands and immediately
+// executes the first hit, bypassing the TUI entirely.
+func RunFirstMatch(cfg *config.Config, query string) error {
+	for _, cmd := range cfg.Commands {
+		matched := fuzzyMatch(query, cmd.Name) || fuzzyMatch(query, cmd.Description)
+		if !matched {
+			for _, step := range cmd.Steps() {
+				if fuzzyMatch(query, step) {
+					matched = true
+					break
+				}
+			}
+		}
+		if matched {
+			return HandleHandoff(cmd)
+		}
 	}
-	return ""
+	return fmt.Errorf("no command matched %q", query)
 }
 
 // Run starts the TUI and handles any post-TUI handoff.

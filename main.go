@@ -64,6 +64,16 @@ func main() {
 		}
 	}
 
+	// If a positional argument was given, fuzzy-match and run the first hit.
+	if args := flag.Args(); len(args) > 0 {
+		query := args[0]
+		if err := ui.RunFirstMatch(cfg, query); err != nil {
+			fmt.Fprintf(os.Stderr, "nexus: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := ui.Run(cfg, *cfgPath); err != nil {
 		fmt.Fprintf(os.Stderr, "nexus: %v\n", err)
 		os.Exit(1)

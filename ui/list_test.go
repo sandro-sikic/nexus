@@ -13,7 +13,6 @@ import (
 func listCfg(cmds ...config.Command) *config.Config {
 	return &config.Config{
 		Title:    "Test",
-		UIMode:   config.UIModeList,
 		RunMode:  config.RunModeStream,
 		Commands: cmds,
 	}
@@ -29,17 +28,6 @@ func keyMsg(key string) tea.KeyMsg {
 
 func arrowMsg(t tea.KeyType) tea.KeyMsg {
 	return tea.KeyMsg{Type: t}
-}
-
-// listCfgWithLastIndex builds a config with a specific LastIndex.
-func listCfgWithLastIndex(idx int, cmds ...config.Command) *config.Config {
-	return &config.Config{
-		Title:     "Test",
-		UIMode:    config.UIModeList,
-		RunMode:   config.RunModeStream,
-		LastIndex: idx,
-		Commands:  cmds,
-	}
 }
 
 // ── Construction ──────────────────────────────────────────────────────────────
@@ -65,27 +53,6 @@ func TestNewListModel_DefaultDimensions(t *testing.T) {
 	m := NewListModel(listCfg())
 	if m.width != 80 || m.height != 24 {
 		t.Errorf("dimensions: got %dx%d, want 80x24", m.width, m.height)
-	}
-}
-
-func TestNewListModel_LastIndexPreselects(t *testing.T) {
-	m := NewListModel(listCfgWithLastIndex(2, cmd("A", "a"), cmd("B", "b"), cmd("C", "c")))
-	if m.cursor != 2 {
-		t.Errorf("cursor with last_index=2: got %d, want 2", m.cursor)
-	}
-}
-
-func TestNewListModel_LastIndexOutOfBoundsFallsBackToZero(t *testing.T) {
-	m := NewListModel(listCfgWithLastIndex(99, cmd("A", "a"), cmd("B", "b")))
-	if m.cursor != 0 {
-		t.Errorf("out-of-range last_index: got %d, want 0", m.cursor)
-	}
-}
-
-func TestNewListModel_LastIndexNegativeFallsBackToZero(t *testing.T) {
-	m := NewListModel(listCfgWithLastIndex(-1, cmd("A", "a")))
-	if m.cursor != 0 {
-		t.Errorf("negative last_index: got %d, want 0", m.cursor)
 	}
 }
 

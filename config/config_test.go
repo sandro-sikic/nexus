@@ -27,7 +27,6 @@ func writeTemp(t *testing.T, content string) string {
 func TestLoad_FullConfig(t *testing.T) {
 	yaml := `
 title: "Test Nexus"
-ui_mode: fuzzy
 run_mode: handoff
 commands:
   - name: Build
@@ -44,9 +43,6 @@ commands:
 
 	if cfg.Title != "Test Nexus" {
 		t.Errorf("title: got %q, want %q", cfg.Title, "Test Nexus")
-	}
-	if cfg.UIMode != config.UIModeFuzzy {
-		t.Errorf("ui_mode: got %q, want %q", cfg.UIMode, config.UIModeFuzzy)
 	}
 	if cfg.RunMode != config.RunModeHandoff {
 		t.Errorf("run_mode: got %q, want %q", cfg.RunMode, config.RunModeHandoff)
@@ -85,16 +81,6 @@ func TestLoad_DefaultTitle(t *testing.T) {
 	}
 	if cfg.Title != "Nexus" {
 		t.Errorf("default title: got %q, want %q", cfg.Title, "Nexus")
-	}
-}
-
-func TestLoad_DefaultUIMode(t *testing.T) {
-	cfg, err := config.Load(writeTemp(t, "commands: []"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.UIMode != config.UIModeList {
-		t.Errorf("default ui_mode: got %q, want list", cfg.UIMode)
 	}
 }
 
@@ -220,15 +206,6 @@ func TestLoad_MalformedCommands(t *testing.T) {
 
 func TestConstants(t *testing.T) {
 	// Ensure string values stay stable — they're used in YAML files.
-	if string(config.UIModeList) != "list" {
-		t.Errorf("UIModeList = %q, want list", config.UIModeList)
-	}
-	if string(config.UIModeFuzzy) != "fuzzy" {
-		t.Errorf("UIModeFuzzy = %q, want fuzzy", config.UIModeFuzzy)
-	}
-	if string(config.UIModeGroup) != "group" {
-		t.Errorf("UIModeGroup = %q, want group", config.UIModeGroup)
-	}
 	if string(config.RunModeStream) != "stream" {
 		t.Errorf("RunModeStream = %q, want stream", config.RunModeStream)
 	}
@@ -237,90 +214,6 @@ func TestConstants(t *testing.T) {
 	}
 	if string(config.RunModeBackground) != "background" {
 		t.Errorf("RunModeBackground = %q, want background", config.RunModeBackground)
-	}
-}
-
-// ── LastIndex ─────────────────────────────────────────────────────────────────
-
-func TestLoad_LastIndexDefaultsToZero(t *testing.T) {
-	cfg, err := config.Load(writeTemp(t, "commands: []"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.LastIndex != 0 {
-		t.Errorf("last_index default: got %d, want 0", cfg.LastIndex)
-	}
-}
-
-func TestLoad_LastIndexPersisted(t *testing.T) {
-	yaml := `
-commands:
-  - name: A
-    command: echo a
-  - name: B
-    command: echo b
-last_index: 1
-`
-	cfg, err := config.Load(writeTemp(t, yaml))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.LastIndex != 1 {
-		t.Errorf("last_index: got %d, want 1", cfg.LastIndex)
-	}
-}
-
-func TestSaveLastIndex_RoundTrip(t *testing.T) {
-	path := writeTemp(t, `
-commands:
-  - name: A
-    command: echo a
-  - name: B
-    command: echo b
-`)
-	if err := config.SaveLastIndex(path, 1); err != nil {
-		t.Fatalf("SaveLastIndex: %v", err)
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("Load after save: %v", err)
-	}
-	if cfg.LastIndex != 1 {
-		t.Errorf("last_index after save: got %d, want 1", cfg.LastIndex)
-	}
-}
-
-func TestSaveLastIndex_PreservesOtherFields(t *testing.T) {
-	path := writeTemp(t, `
-title: My App
-ui_mode: list
-run_mode: handoff
-commands:
-  - name: Deploy
-    command: make deploy
-`)
-	if err := config.SaveLastIndex(path, 0); err != nil {
-		t.Fatalf("SaveLastIndex: %v", err)
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Title != "My App" {
-		t.Errorf("title changed: got %q", cfg.Title)
-	}
-	if cfg.RunMode != config.RunModeHandoff {
-		t.Errorf("run_mode changed: got %q", cfg.RunMode)
-	}
-	if len(cfg.Commands) != 1 || cfg.Commands[0].Name != "Deploy" {
-		t.Errorf("commands changed: %+v", cfg.Commands)
-	}
-}
-
-func TestSaveLastIndex_MissingFile(t *testing.T) {
-	err := config.SaveLastIndex("/nonexistent/path/nexus.yaml", 0)
-	if err == nil {
-		t.Error("expected error for missing file")
 	}
 }
 

@@ -11,15 +11,6 @@ import (
 // ErrNotFound is returned by Load when the config file does not exist.
 var ErrNotFound = errors.New("config file not found")
 
-// UIMode controls how commands are presented.
-type UIMode string
-
-const (
-	UIModeList  UIMode = "list"
-	UIModeFuzzy UIMode = "fuzzy"
-	UIModeGroup UIMode = "group"
-)
-
 // RunMode controls how a selected command is executed.
 type RunMode string
 
@@ -37,7 +28,7 @@ type Command struct {
 	Commands    []string `yaml:"commands,omitempty"` // multiple shell commands run sequentially
 	Dir         string   `yaml:"dir"`                // working directory (optional)
 	RunMode     RunMode  `yaml:"run_mode"`           // overrides top-level default
-	Group       string   `yaml:"group"`              // used when ui_mode = group
+	Group       string   `yaml:"group"`              // optional group label for display grouping
 }
 
 // Steps returns the ordered list of shell commands to run.
@@ -54,11 +45,9 @@ func (c Command) Steps() []string {
 
 // Config is the root structure of nexus.yaml.
 type Config struct {
-	Title     string    `yaml:"title"`
-	UIMode    UIMode    `yaml:"ui_mode"`
-	RunMode   RunMode   `yaml:"run_mode"`             // default run mode
-	LastIndex int       `yaml:"last_index,omitempty"` // last selected index (list mode)
-	Commands  []Command `yaml:"commands"`
+	Title    string    `yaml:"title"`
+	RunMode  RunMode   `yaml:"run_mode"` // default run mode
+	Commands []Command `yaml:"commands"`
 }
 
 // Write serialises cfg to a YAML file at path, creating it if necessary.
@@ -71,17 +60,6 @@ func Write(path string, cfg *Config) error {
 		return fmt.Errorf("writing config: %w", err)
 	}
 	return nil
-}
-
-// SaveLastIndex updates only the last_index field in the config file at path.
-// It reloads the file, sets the field, and writes it back to preserve all other fields.
-func SaveLastIndex(path string, idx int) error {
-	cfg, err := Load(path)
-	if err != nil {
-		return err
-	}
-	cfg.LastIndex = idx
-	return Write(path, cfg)
 }
 
 // Load reads and parses a YAML config file.
@@ -100,9 +78,6 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Apply defaults
-	if cfg.UIMode == "" {
-		cfg.UIMode = UIModeList
-	}
 	if cfg.RunMode == "" {
 		cfg.RunMode = RunModeStream
 	}

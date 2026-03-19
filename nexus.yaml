@@ -1,15 +1,15 @@
 # nexus.yaml — example configuration
 #
-# ui_mode: list | fuzzy | group
 # run_mode: stream | handoff | background
 #
 # Per-command run_mode overrides the top-level default.
 #
 # Multi-step commands: use "commands" (list) instead of "command" (string)
 # to run several shell commands sequentially. Execution stops on first failure.
+#
+# group: optional label — commands with the same group are shown together.
 
 title: "My Project Nexus"
-ui_mode: group        # show commands organized by group
 run_mode: stream      # default: stream output inside the TUI
 
 commands:

@@ -114,9 +114,10 @@ func confirmDelete(t *testing.T, m WizardModel) WizardModel {
 	return pressEnter(t, m)
 }
 
-// advanceThrough drives the wizard to just past the "default run mode" step
-// (i.e. ready for the first command), using the given title, uiMode index,
-// and runMode index (0-based within their option lists).
+// advanceToFirstCmd drives the wizard to just past the "default run mode" step
+// (i.e. ready for the first command), using the given title and runMode index
+// (0-based within runModeOptions). The uiModeIdx parameter is kept for
+// compatibility but is ignored — UI mode is no longer configurable.
 func advanceToFirstCmd(t *testing.T, title string, uiModeIdx, runModeIdx int) WizardModel {
 	t.Helper()
 	m := NewWizard("out.yaml")
@@ -129,15 +130,6 @@ func advanceToFirstCmd(t *testing.T, title string, uiModeIdx, runModeIdx int) Wi
 
 	// Title
 	m = typeText(t, m, title)
-	m = pressEnter(t, m)
-	if m.step != wizStepUIMode {
-		t.Fatalf("expected wizStepUIMode, got %d", m.step)
-	}
-
-	// UI mode
-	for i := 0; i < uiModeIdx; i++ {
-		m = pressDown(t, m)
-	}
 	m = pressEnter(t, m)
 	if m.step != wizStepRunMode {
 		t.Fatalf("expected wizStepRunMode, got %d", m.step)
@@ -301,8 +293,8 @@ func TestWizard_TitleTypingAndConfirm(t *testing.T) {
 	if m.cfgTitle != "My Runner" {
 		t.Errorf("cfgTitle: got %q, want My Runner", m.cfgTitle)
 	}
-	if m.step != wizStepUIMode {
-		t.Errorf("should advance to wizStepUIMode, got %d", m.step)
+	if m.step != wizStepRunMode {
+		t.Errorf("should advance to wizStepRunMode, got %d", m.step)
 	}
 }
 
@@ -345,67 +337,20 @@ func TestWizard_TitleInputBufferClearedOnAdvance(t *testing.T) {
 	}
 }
 
-// ── UI mode step ──────────────────────────────────────────────────────────────
+// ── Title advances directly to run mode (UI mode step removed) ───────────────
 
-func TestWizard_UIModeDefaultIsFirst(t *testing.T) {
+func TestWizard_TitleAdvancesDirectlyToRunMode(t *testing.T) {
+	m := NewWizard("x.yaml")
+	m = pressEnter(t, m) // welcome
+	m = pressEnter(t, m) // title (blank → "Nexus")
+	if m.step != wizStepRunMode {
+		t.Errorf("expected wizStepRunMode after title, got %d", m.step)
+	}
+}
+
+func TestWizard_RunModePickerReachable(t *testing.T) {
 	m := advanceToFirstCmd(t, "T", 0, 0)
 	_ = m // just assert it didn't panic
-}
-
-func TestWizard_UIModePicker_List(t *testing.T) {
-	m := NewWizard("x.yaml")
-	m = pressEnter(t, m)
-	m = pressEnter(t, m) // title (blank → "Nexus")
-	// cursor at 0 = list
-	m = pressEnter(t, m)
-	if m.cfgUIMode != config.UIModeList {
-		t.Errorf("UIMode: got %q, want list", m.cfgUIMode)
-	}
-}
-
-func TestWizard_UIModePicker_Fuzzy(t *testing.T) {
-	m := NewWizard("x.yaml")
-	m = pressEnter(t, m)
-	m = pressEnter(t, m) // title
-	m = pressDown(t, m)  // cursor → fuzzy
-	m = pressEnter(t, m)
-	if m.cfgUIMode != config.UIModeFuzzy {
-		t.Errorf("UIMode: got %q, want fuzzy", m.cfgUIMode)
-	}
-}
-
-func TestWizard_UIModePicker_Group(t *testing.T) {
-	m := NewWizard("x.yaml")
-	m = pressEnter(t, m)
-	m = pressEnter(t, m) // title
-	m = pressDown(t, m)
-	m = pressDown(t, m) // cursor → group
-	m = pressEnter(t, m)
-	if m.cfgUIMode != config.UIModeGroup {
-		t.Errorf("UIMode: got %q, want group", m.cfgUIMode)
-	}
-}
-
-func TestWizard_UIModePicker_CursorDoesNotGoAboveZero(t *testing.T) {
-	m := NewWizard("x.yaml")
-	m = pressEnter(t, m)
-	m = pressEnter(t, m)
-	m = pressUp(t, m) // should stay at 0
-	if m.optCursor != 0 {
-		t.Errorf("cursor went negative: %d", m.optCursor)
-	}
-}
-
-func TestWizard_UIModePicker_CursorDoesNotExceedMax(t *testing.T) {
-	m := NewWizard("x.yaml")
-	m = pressEnter(t, m)
-	m = pressEnter(t, m)
-	for i := 0; i < 10; i++ {
-		m = pressDown(t, m)
-	}
-	if m.optCursor >= len(uiModeOptions) {
-		t.Errorf("cursor exceeded options: %d", m.optCursor)
-	}
 }
 
 // ── Run mode step ─────────────────────────────────────────────────────────────
@@ -486,29 +431,15 @@ func TestWizard_CmdDirOptional(t *testing.T) {
 	m = typeText(t, m, "echo hi")
 	m = pressEnter(t, m) // command ✓
 	m = pressEnter(t, m) // more commands: blank → skip
-	m = pressEnter(t, m) // dir blank — should advance
-	if m.step != wizStepCmdRunMode {
-		t.Errorf("blank dir should advance past dir step, got %d", m.step)
+	m = pressEnter(t, m) // dir blank — should advance to group step
+	if m.step != wizStepCmdGroup {
+		t.Errorf("blank dir should advance to wizStepCmdGroup, got %d", m.step)
 	}
 }
 
-func TestWizard_CmdGroupStep_ShownOnlyInGroupMode(t *testing.T) {
-	// In list mode the group step should be skipped
-	m := advanceToFirstCmd(t, "T", 0 /* list */, 0)
-	m = typeText(t, m, "Name")
-	m = pressEnter(t, m) // name
-	m = pressEnter(t, m) // desc
-	m = typeText(t, m, "echo hi")
-	m = pressEnter(t, m) // command
-	m = pressEnter(t, m) // more commands: blank → skip
-	m = pressEnter(t, m) // dir
-	if m.step == wizStepCmdGroup {
-		t.Error("group step should be skipped in list mode")
-	}
-}
-
-func TestWizard_CmdGroupStep_ShownInGroupMode(t *testing.T) {
-	m := advanceToFirstCmd(t, "T", 2 /* group */, 0)
+func TestWizard_CmdGroupStep_AlwaysShown(t *testing.T) {
+	// Group step is always shown (UI mode is no longer selectable)
+	m := advanceToFirstCmd(t, "T", 0, 0)
 	m = typeText(t, m, "Name")
 	m = pressEnter(t, m) // name
 	m = pressEnter(t, m) // desc
@@ -517,7 +448,7 @@ func TestWizard_CmdGroupStep_ShownInGroupMode(t *testing.T) {
 	m = pressEnter(t, m) // more commands: blank → skip
 	m = pressEnter(t, m) // dir
 	if m.step != wizStepCmdGroup {
-		t.Errorf("group mode should show wizStepCmdGroup, got %d", m.step)
+		t.Errorf("group step should always be shown, got %d", m.step)
 	}
 }
 
@@ -612,7 +543,7 @@ func TestWizard_CommandFieldsStoredCorrectly(t *testing.T) {
 // ── Group mode: group field stored ───────────────────────────────────────────
 
 func TestWizard_GroupMode_GroupFieldStored(t *testing.T) {
-	m := advanceToFirstCmd(t, "T", 2 /* group */, 0)
+	m := advanceToFirstCmd(t, "T", 0, 0)
 	m = typeText(t, m, "Deploy")
 	m = pressEnter(t, m) // name
 	m = pressEnter(t, m) // desc
@@ -641,7 +572,7 @@ func TestWizard_SummaryViewContainsAllFields(t *testing.T) {
 	m = pressEnter(t, m)    // → delete step
 	m = confirmDelete(t, m) // → summary
 	v := m.View()
-	fields := []string{"My Project", "list", "stream", "Build", "compile", "make build", "/src"}
+	fields := []string{"My Project", "stream", "Build", "compile", "make build", "/src"}
 	for _, f := range fields {
 		if !strings.Contains(v, f) {
 			t.Errorf("summary view missing %q:\n%s", f, v)
@@ -651,10 +582,9 @@ func TestWizard_SummaryViewContainsAllFields(t *testing.T) {
 
 func TestWizard_SummaryViewContainsSavePath(t *testing.T) {
 	m := NewWizard("my/path/nexus.yaml")
-	m = pressEnter(t, m)
-	m = pressEnter(t, m)
-	m = pressEnter(t, m)
-	m = pressEnter(t, m)
+	m = pressEnter(t, m) // welcome
+	m = pressEnter(t, m) // title
+	m = pressEnter(t, m) // runMode
 	m = addCommand(t, m, "X", "", "echo x", "", "", 0)
 	m = pressDown(t, m)     // no
 	m = pressEnter(t, m)    // → delete step
@@ -670,7 +600,6 @@ func TestWizard_SaveWritesFile(t *testing.T) {
 	m = pressEnter(t, m) // welcome
 	m = typeText(t, m, "Save Test")
 	m = pressEnter(t, m) // title
-	m = pressEnter(t, m) // uiMode = list
 	m = pressEnter(t, m) // runMode = stream
 	m = addCommand(t, m, "Echo", "desc", "echo hello", "", "", 0)
 	m = pressDown(t, m)     // addAnother = no
@@ -705,10 +634,9 @@ func TestWizard_SaveWritesFile(t *testing.T) {
 func TestWizard_SaveErrorRecorded(t *testing.T) {
 	// Use an unwritable path to force an error
 	m := NewWizard("/nonexistent/deeply/nested/path/nexus.yaml")
-	m = pressEnter(t, m)
-	m = pressEnter(t, m)
-	m = pressEnter(t, m)
-	m = pressEnter(t, m)
+	m = pressEnter(t, m) // welcome
+	m = pressEnter(t, m) // title
+	m = pressEnter(t, m) // runMode
 	m = addCommand(t, m, "X", "", "echo x", "", "", 0)
 	m = pressDown(t, m)
 	m = pressEnter(t, m)    // → delete step
@@ -727,7 +655,6 @@ func TestWizard_SaveErrorRecorded(t *testing.T) {
 func TestWizard_BuildConfigAssemblesCorrectly(t *testing.T) {
 	m := NewWizard("x.yaml")
 	m.cfgTitle = "Assembled"
-	m.cfgUIMode = config.UIModeFuzzy
 	m.cfgRunMode = config.RunModeHandoff
 	m.commands = []config.Command{
 		{Name: "A", Command: "a", RunMode: config.RunModeStream},
@@ -737,9 +664,6 @@ func TestWizard_BuildConfigAssemblesCorrectly(t *testing.T) {
 	cfg := m.buildConfig()
 	if cfg.Title != "Assembled" {
 		t.Errorf("Title: got %q", cfg.Title)
-	}
-	if cfg.UIMode != config.UIModeFuzzy {
-		t.Errorf("UIMode: got %q", cfg.UIMode)
 	}
 	if cfg.RunMode != config.RunModeHandoff {
 		t.Errorf("RunMode: got %q", cfg.RunMode)
@@ -807,14 +731,14 @@ func TestWizard_ViewShowsValidationError(t *testing.T) {
 	}
 }
 
-func TestWizard_ViewOptionPickerShowsAllOptions(t *testing.T) {
+func TestWizard_ViewOptionPickerShowsRunModeOptions(t *testing.T) {
 	m := NewWizard("x.yaml")
 	m = pressEnter(t, m) // welcome
 	m = pressEnter(t, m) // title
-	// now on uiMode picker
+	// now on runMode picker (no UIMode step)
 	v := m.View()
-	if !strings.Contains(v, "list") || !strings.Contains(v, "fuzzy") || !strings.Contains(v, "group") {
-		t.Errorf("option picker missing options:\n%s", v)
+	if !strings.Contains(v, "stream") || !strings.Contains(v, "handoff") || !strings.Contains(v, "background") {
+		t.Errorf("run mode picker missing options:\n%s", v)
 	}
 }
 
@@ -846,7 +770,6 @@ func TestConfig_WriteAndLoad_RoundTrip(t *testing.T) {
 
 	original := &config.Config{
 		Title:   "Round Trip",
-		UIMode:  config.UIModeFuzzy,
 		RunMode: config.RunModeBackground,
 		Commands: []config.Command{
 			{Name: "A", Description: "desc a", Command: "echo a", Dir: "/tmp", Group: "G1", RunMode: config.RunModeStream},
@@ -865,9 +788,6 @@ func TestConfig_WriteAndLoad_RoundTrip(t *testing.T) {
 
 	if loaded.Title != original.Title {
 		t.Errorf("Title: got %q, want %q", loaded.Title, original.Title)
-	}
-	if loaded.UIMode != original.UIMode {
-		t.Errorf("UIMode: got %q, want %q", loaded.UIMode, original.UIMode)
 	}
 	if loaded.RunMode != original.RunMode {
 		t.Errorf("RunMode: got %q, want %q", loaded.RunMode, original.RunMode)
@@ -1104,7 +1024,6 @@ func TestWizard_DeleteAndSave_FileHasCorrectCommands(t *testing.T) {
 	m = pressEnter(t, m) // welcome
 	m = typeText(t, m, "Del Test")
 	m = pressEnter(t, m) // title
-	m = pressEnter(t, m) // uiMode
 	m = pressEnter(t, m) // runMode
 
 	// Add two commands.
@@ -1139,7 +1058,6 @@ func TestWizard_DeleteAndSave_FileHasCorrectCommands(t *testing.T) {
 func TestNewWizardFromConfig_EditingFlag(t *testing.T) {
 	cfg := &config.Config{
 		Title:    "My App",
-		UIMode:   config.UIModeFuzzy,
 		RunMode:  config.RunModeHandoff,
 		Commands: []config.Command{{Name: "A", Command: "echo a", RunMode: config.RunModeHandoff}},
 	}
@@ -1150,7 +1068,7 @@ func TestNewWizardFromConfig_EditingFlag(t *testing.T) {
 }
 
 func TestNewWizardFromConfig_PrePopulatesTitle(t *testing.T) {
-	cfg := &config.Config{Title: "Pre-filled", UIMode: config.UIModeList, RunMode: config.RunModeStream}
+	cfg := &config.Config{Title: "Pre-filled", RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	// In edit mode, press 'e' from the hub to reach the title step.
 	// The inputBuf is seeded with the existing title.
@@ -1166,13 +1084,9 @@ func TestNewWizardFromConfig_PrePopulatesTitle(t *testing.T) {
 func TestNewWizardFromConfig_PrePopulatesGlobalFields(t *testing.T) {
 	cfg := &config.Config{
 		Title:   "X",
-		UIMode:  config.UIModeFuzzy,
 		RunMode: config.RunModeBackground,
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
-	if m.cfgUIMode != config.UIModeFuzzy {
-		t.Errorf("cfgUIMode: got %q, want fuzzy", m.cfgUIMode)
-	}
 	if m.cfgRunMode != config.RunModeBackground {
 		t.Errorf("cfgRunMode: got %q, want background", m.cfgRunMode)
 	}
@@ -1183,7 +1097,7 @@ func TestNewWizardFromConfig_CopiesCommands(t *testing.T) {
 		{Name: "Build", Command: "make build", RunMode: config.RunModeStream},
 		{Name: "Test", Command: "go test", RunMode: config.RunModeStream},
 	}
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream, Commands: orig}
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream, Commands: orig}
 	m := NewWizardFromConfig("out.yaml", cfg)
 
 	if len(m.commands) != 2 {
@@ -1201,7 +1115,7 @@ func TestNewWizardFromConfig_CopiesCommands(t *testing.T) {
 }
 
 func TestNewWizardFromConfig_StartsAtHub(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream}
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	if m.step != wizStepEditHub {
 		t.Errorf("edit mode should start at wizStepEditHub, got %d", m.step)
@@ -1211,7 +1125,6 @@ func TestNewWizardFromConfig_StartsAtHub(t *testing.T) {
 func TestWizardEdit_HubViewMentionsEdit(t *testing.T) {
 	cfg := &config.Config{
 		Title:    "My App",
-		UIMode:   config.UIModeList,
 		RunMode:  config.RunModeStream,
 		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
 	}
@@ -1226,7 +1139,7 @@ func TestWizardEdit_HubViewMentionsEdit(t *testing.T) {
 }
 
 func TestWizardEdit_TitlePreFilledAndConfirmable(t *testing.T) {
-	cfg := &config.Config{Title: "Original", UIMode: config.UIModeList, RunMode: config.RunModeStream}
+	cfg := &config.Config{Title: "Original", RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
 
 	// Hub → 'e' → Title step (inputBuf pre-filled with existing title)
@@ -1240,13 +1153,13 @@ func TestWizardEdit_TitlePreFilledAndConfirmable(t *testing.T) {
 	if m.cfgTitle != "Original" {
 		t.Errorf("cfgTitle after confirm: got %q, want Original", m.cfgTitle)
 	}
-	if m.step != wizStepUIMode {
-		t.Errorf("step after title: got %d, want wizStepUIMode", m.step)
+	if m.step != wizStepRunMode {
+		t.Errorf("step after title: got %d, want wizStepRunMode", m.step)
 	}
 }
 
 func TestWizardEdit_TitleCanBeReplaced(t *testing.T) {
-	cfg := &config.Config{Title: "Old", UIMode: config.UIModeList, RunMode: config.RunModeStream}
+	cfg := &config.Config{Title: "Old", RunMode: config.RunModeStream}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	m = hubEditSettings(t, m) // hub → 'e' → title step (pre-filled "Old")
 
@@ -1262,24 +1175,11 @@ func TestWizardEdit_TitleCanBeReplaced(t *testing.T) {
 	}
 }
 
-func TestWizardEdit_UIModePreselected(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeFuzzy, RunMode: config.RunModeStream}
-	m := NewWizardFromConfig("out.yaml", cfg)
-	m = hubEditSettings(t, m) // hub → 'e' → title step
-	m = pressEnter(t, m)      // confirm title → UIMode step
-
-	// optCursor should point at "fuzzy" (index 1)
-	if m.optCursor != 1 {
-		t.Errorf("optCursor on UIMode step: got %d, want 1 (fuzzy)", m.optCursor)
-	}
-}
-
 func TestWizardEdit_RunModePreselected(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeBackground}
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeBackground}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	m = hubEditSettings(t, m) // hub → 'e' → title step
-	m = pressEnter(t, m)      // confirm title → UIMode step
-	m = pressEnter(t, m)      // confirm UIMode → RunMode step
+	m = pressEnter(t, m)      // confirm title → RunMode step (no UIMode step)
 
 	// optCursor should point at "background" (index 2)
 	if m.optCursor != 2 {
@@ -1291,7 +1191,7 @@ func TestWizardEdit_ExistingCommandsCarriedToSummary(t *testing.T) {
 	existing := []config.Command{
 		{Name: "Build", Command: "make build", RunMode: config.RunModeStream},
 	}
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream, Commands: existing}
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream, Commands: existing}
 	m := NewWizardFromConfig("out.yaml", cfg)
 
 	// From the hub, add a new command via 'a', then save via 's'.
@@ -1339,7 +1239,6 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 	// Write initial config.
 	initial := &config.Config{
 		Title:   "Initial",
-		UIMode:  config.UIModeList,
 		RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "OldCmd", Command: "echo old", RunMode: config.RunModeStream},
@@ -1357,8 +1256,7 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 		m = pressBackspace(t, m)
 	}
 	m = typeText(t, m, "Updated")
-	m = pressEnter(t, m) // confirm title → UIMode
-	m = pressEnter(t, m) // confirm UIMode → RunMode
+	m = pressEnter(t, m) // confirm title → RunMode (no UIMode step)
 	m = pressEnter(t, m) // confirm RunMode → back to hub
 
 	if m.step != wizStepEditHub {
@@ -1400,7 +1298,7 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 // ── Edit hub tests ────────────────────────────────────────────────────────────
 
 func TestEditHub_InitialStep(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1410,12 +1308,12 @@ func TestEditHub_InitialStep(t *testing.T) {
 }
 
 func TestEditHub_ViewContainsSettingsSummary(t *testing.T) {
-	cfg := &config.Config{Title: "MyApp", UIMode: config.UIModeFuzzy, RunMode: config.RunModeHandoff,
+	cfg := &config.Config{Title: "MyApp", RunMode: config.RunModeHandoff,
 		Commands: []config.Command{{Name: "Build", Command: "make build", RunMode: config.RunModeStream}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	v := m.View()
-	for _, want := range []string{"MyApp", "fuzzy", "handoff", "Build"} {
+	for _, want := range []string{"MyApp", "handoff", "Build"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("hub view missing %q:\n%s", want, v)
 		}
@@ -1423,7 +1321,7 @@ func TestEditHub_ViewContainsSettingsSummary(t *testing.T) {
 }
 
 func TestEditHub_ViewContainsActionMenu(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1436,7 +1334,7 @@ func TestEditHub_ViewContainsActionMenu(t *testing.T) {
 }
 
 func TestEditHub_DeleteMarksInitialisedFalse(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "A", Command: "a", RunMode: config.RunModeStream},
 			{Name: "B", Command: "b", RunMode: config.RunModeStream},
@@ -1451,7 +1349,7 @@ func TestEditHub_DeleteMarksInitialisedFalse(t *testing.T) {
 }
 
 func TestEditHub_SpaceTogglesDeleteMark(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "A", Command: "a", RunMode: config.RunModeStream},
 			{Name: "B", Command: "b", RunMode: config.RunModeStream},
@@ -1469,7 +1367,7 @@ func TestEditHub_SpaceTogglesDeleteMark(t *testing.T) {
 }
 
 func TestEditHub_DownMovesCommandCursor(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "A", Command: "a", RunMode: config.RunModeStream},
 			{Name: "B", Command: "b", RunMode: config.RunModeStream},
@@ -1490,7 +1388,7 @@ func TestEditHub_DownMovesCommandCursor(t *testing.T) {
 }
 
 func TestEditHub_DeleteMarkedRemovesCommand(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "Keep", Command: "echo keep", RunMode: config.RunModeStream},
 			{Name: "Gone", Command: "echo gone", RunMode: config.RunModeStream},
@@ -1512,7 +1410,7 @@ func TestEditHub_DeleteMarkedRemovesCommand(t *testing.T) {
 }
 
 func TestEditHub_DeleteAllMarkedIsRejected(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "Only", Command: "echo only", RunMode: config.RunModeStream},
 		},
@@ -1529,7 +1427,7 @@ func TestEditHub_DeleteAllMarkedIsRejected(t *testing.T) {
 }
 
 func TestEditHub_DeleteNoneMarkedShowsError(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "A", Command: "a", RunMode: config.RunModeStream},
 		},
@@ -1542,13 +1440,12 @@ func TestEditHub_DeleteNoneMarkedShowsError(t *testing.T) {
 }
 
 func TestEditHub_EditSettingsReturnsToHub(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	m = hubEditSettings(t, m) // hub → 'e' → title
-	m = pressEnter(t, m)      // confirm title → UIMode
-	m = pressEnter(t, m)      // confirm UIMode → RunMode
+	m = pressEnter(t, m)      // confirm title → RunMode (no UIMode step)
 	m = pressEnter(t, m)      // confirm RunMode → back to hub
 	if m.step != wizStepEditHub {
 		t.Errorf("after editing settings, should return to hub, got %d", m.step)
@@ -1556,7 +1453,7 @@ func TestEditHub_EditSettingsReturnsToHub(t *testing.T) {
 }
 
 func TestEditHub_AddCommandReturnsToHub(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1571,7 +1468,7 @@ func TestEditHub_AddCommandReturnsToHub(t *testing.T) {
 }
 
 func TestEditHub_SaveGoesToSummary(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1582,7 +1479,7 @@ func TestEditHub_SaveGoesToSummary(t *testing.T) {
 }
 
 func TestEditHub_DeleteMarksGrowAfterAddCommand(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{{Name: "A", Command: "a", RunMode: config.RunModeStream}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1597,7 +1494,7 @@ func TestEditHub_DeleteMarksGrowAfterAddCommand(t *testing.T) {
 }
 
 func TestEditHub_DeleteMarksResetAfterBulkDelete(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "A", Command: "a", RunMode: config.RunModeStream},
 			{Name: "B", Command: "b", RunMode: config.RunModeStream},
@@ -1615,7 +1512,7 @@ func TestEditHub_DeleteMarksResetAfterBulkDelete(t *testing.T) {
 }
 
 func TestEditHub_CursorClampsAfterDelete(t *testing.T) {
-	cfg := &config.Config{Title: "T", UIMode: config.UIModeList, RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "A", Command: "a", RunMode: config.RunModeStream},
 			{Name: "B", Command: "b", RunMode: config.RunModeStream},
@@ -1634,7 +1531,6 @@ func TestEditHub_SaveAndVerifyFile(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "nexus.yaml")
 	existing := &config.Config{
 		Title:   "Orig",
-		UIMode:  config.UIModeList,
 		RunMode: config.RunModeStream,
 		Commands: []config.Command{
 			{Name: "Keep", Command: "echo keep", RunMode: config.RunModeStream},
@@ -1672,13 +1568,13 @@ func TestOptionIndex_FindsCorrectIndex(t *testing.T) {
 		v    string
 		want int
 	}{
-		{"list", 0},
-		{"fuzzy", 1},
-		{"group", 2},
+		{"stream", 0},
+		{"handoff", 1},
+		{"background", 2},
 		{"unknown", 0}, // fallback
 	}
 	for _, tc := range cases {
-		got := optionIndex(uiModeOptions, tc.v)
+		got := optionIndex(runModeOptions, tc.v)
 		if got != tc.want {
 			t.Errorf("optionIndex(%q): got %d, want %d", tc.v, got, tc.want)
 		}
