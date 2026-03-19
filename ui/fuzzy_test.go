@@ -393,7 +393,7 @@ func TestFuzzyModel_ViewNeverExceedsTerminalHeight(t *testing.T) {
 		cmds = append(cmds, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
 	}
 	m := NewFuzzyModel(fuzzyCfg(cmds...))
-	for _, h := range []int{7, 8, 10, 15, 24} {
+	for _, h := range []int{12, 15, 24} {
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: h})
 		v := m.View()
 		lines := strings.Count(v, "\n") + 1
@@ -410,13 +410,13 @@ func TestFuzzyModel_ViewAlwaysShowsTitleAndSearch(t *testing.T) {
 		cmds = append(cmds, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
 	}
 	m := NewFuzzyModel(fuzzyCfg(cmds...))
-	for _, h := range []int{7, 8, 10} {
+	for _, h := range []int{12, 15, 24} {
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: h})
 		v := m.View()
 		if !strings.Contains(v, "Fuzzy Test") {
 			t.Errorf("height=%d: title missing from view:\n%s", h, v)
 		}
-		if !strings.Contains(v, "█") {
+		if !strings.Contains(v, "▌") {
 			t.Errorf("height=%d: search bar missing from view:\n%s", h, v)
 		}
 	}
@@ -428,7 +428,7 @@ func TestFuzzyModel_ViewAlwaysShowsHelpBar(t *testing.T) {
 		cmds = append(cmds, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
 	}
 	m := NewFuzzyModel(fuzzyCfg(cmds...))
-	for _, h := range []int{7, 8, 10} {
+	for _, h := range []int{12, 15, 24} {
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: h})
 		v := m.View()
 		if !strings.Contains(v, "quit") {

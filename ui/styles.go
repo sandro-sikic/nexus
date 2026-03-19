@@ -33,4 +33,27 @@ var (
 
 	cursorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("212"))
+
+	// Input box styles
+	inputBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("212")).
+			BorderBackground(lipgloss.Color("236")).
+			Padding(0, 1).
+			Width(40)
+
+	inputPromptStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("212")).
+				Bold(true)
+
+	inputTextStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252"))
+
+	inputCursorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("212")).
+				Bold(true)
+
+	inputPlaceholderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240")).
+				Italic(true)
 )

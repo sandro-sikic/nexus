@@ -139,7 +139,23 @@ func (m *FuzzyModel) moveGroupCursor(delta int) {
 
 // headerText returns the fixed top section as a rendered string.
 func (m FuzzyModel) headerText() string {
-	return titleStyle.Render(m.title) + "\n\n" + "> " + m.query + "█\n"
+	var b strings.Builder
+
+	// Title
+	b.WriteString(titleStyle.Render(m.title))
+	b.WriteString("\n\n")
+
+	// Input box with border
+	inputContent := inputPromptStyle.Render("❯ ")
+	if m.query != "" {
+		inputContent += inputTextStyle.Render(m.query)
+	}
+	inputContent += inputCursorStyle.Render("▌")
+
+	b.WriteString(inputBoxStyle.Render(inputContent))
+	b.WriteString("\n")
+
+	return b.String()
 }
 
 // footerText returns the fixed bottom section as a rendered string.

@@ -283,6 +283,11 @@ func (m WizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Go back a step
+	if msg.Type == tea.KeyEsc {
+		return m.goBack()
+	}
+
 	// ── Edit hub has its own rich navigation ──────────────────────────────
 	if m.step == wizStepEditHub {
 		return m.handleHubKey(msg)
@@ -592,6 +597,121 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// goBack returns to the previous step, restoring state where possible.
+func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
+	m.validErr = ""
+
+	switch m.step {
+
+	// ── Title → Welcome (create) or EditHub (edit sub-flow) ──────────────
+	case wizStepTitle:
+		if m.returnToHub {
+			m.returnToHub = false
+			m.inputBuf = ""
+			m.step = wizStepEditHub
+		} else {
+			m.inputBuf = ""
+			m.step = wizStepWelcome
+		}
+
+	// ── RunMode → Title (restore title into inputBuf) ────────────────────
+	case wizStepRunMode:
+		m.inputBuf = m.cfgTitle
+		m.step = wizStepTitle
+
+	// ── CmdName → RunMode (create) or EditHub (edit sub-flow) ───────────
+	case wizStepCmdName:
+		if m.returnToHub {
+			m.returnToHub = false
+			m.resetCmdFields()
+			m.optCursor = 0
+			m.step = wizStepEditHub
+		} else {
+			m.inputBuf = ""
+			m.optCursor = optionIndex(runModeOptions, string(m.cfgRunMode))
+			m.step = wizStepRunMode
+		}
+
+	// ── CmdDesc → CmdName (restore name) ────────────────────────────────
+	case wizStepCmdDesc:
+		m.inputBuf = m.cmdName
+		m.step = wizStepCmdName
+
+	// ── CmdCommand → CmdDesc (restore desc) ─────────────────────────────
+	case wizStepCmdCommand:
+		m.inputBuf = m.cmdDesc
+		m.step = wizStepCmdDesc
+
+	// ── CmdMoreCommands → CmdCommand (restore first command, discard extras) ──
+	case wizStepCmdMoreCommands:
+		m.inputBuf = m.cmdCommand
+		m.cmdExtraCommands = nil
+		m.step = wizStepCmdCommand
+
+	// ── CmdDir → CmdMoreCommands (empty buffer) ─────────────────────────
+	case wizStepCmdDir:
+		m.inputBuf = ""
+		m.step = wizStepCmdMoreCommands
+
+	// ── CmdGroup → CmdDir (restore dir) ─────────────────────────────────
+	case wizStepCmdGroup:
+		m.inputBuf = m.cmdDir
+		m.step = wizStepCmdDir
+
+	// ── CmdRunMode → CmdGroup (restore group) ───────────────────────────
+	case wizStepCmdRunMode:
+		m.inputBuf = m.cmdGroup
+		m.optCursor = 0
+		m.step = wizStepCmdGroup
+
+	// ── AddAnother → CmdRunMode (restore command fields, un-commit last cmd) ──
+	case wizStepAddAnother:
+		if len(m.commands) > 0 {
+			last := m.commands[len(m.commands)-1]
+			m.commands = m.commands[:len(m.commands)-1]
+			m.cmdName = last.Name
+			m.cmdDesc = last.Description
+			m.cmdDir = last.Dir
+			m.cmdGroup = last.Group
+			m.cmdRunMode = last.RunMode
+			steps := last.Steps()
+			if len(steps) > 0 {
+				m.cmdCommand = steps[0]
+			}
+			if len(steps) > 1 {
+				m.cmdExtraCommands = steps[1:]
+			}
+		}
+		m.inputBuf = ""
+		m.optCursor = 0
+		m.step = wizStepCmdRunMode
+
+	// ── DeleteCmds → AddAnother ──────────────────────────────────────────
+	case wizStepDeleteCmds:
+		m.deleteMarks = nil
+		m.inputBuf = ""
+		m.optCursor = 0
+		m.step = wizStepAddAnother
+
+	// ── Summary → DeleteCmds (or AddAnother if single command) ──────────
+	case wizStepSummary:
+		m.inputBuf = ""
+		m.optCursor = 0
+		if len(m.commands) > 1 {
+			m.deleteMarks = make([]bool, len(m.commands))
+			m.step = wizStepDeleteCmds
+		} else {
+			m.step = wizStepAddAnother
+		}
+
+	// ── Steps that don't support going back (Welcome, EditHub, Done) ────
+	default:
+		return m, nil
+	}
+
+	return m, nil
+}
+
 // commitCommand appends the command being built to m.commands.
 func (m *WizardModel) commitCommand() {
 	rm := m.cmdRunMode
@@ -794,23 +914,26 @@ func (m WizardModel) viewTextInput(title, hint, placeholder string, optional boo
 	b.WriteString(wizSeparator + "\n\n")
 	b.WriteString("  " + wizSubtitleStyle.Render(hint) + "\n\n")
 
-	display := m.inputBuf
-	if display == "" {
-		display = wizDimStyle.Render(placeholder)
+	// Build input content
+	inputContent := inputPromptStyle.Render("❯ ")
+	if m.inputBuf != "" {
+		inputContent += inputTextStyle.Render(m.inputBuf)
 	} else {
-		display = wizValueStyle.Render(display)
+		inputContent += inputPlaceholderStyle.Render(placeholder)
 	}
-	b.WriteString("  " + wizLabelStyle.Render(">") + " " + display + wizCursorStyle.Render("█") + "\n")
+	inputContent += inputCursorStyle.Render("▌")
+
+	b.WriteString(inputBoxStyle.Render(inputContent))
 
 	if m.validErr != "" {
-		b.WriteString("\n  " + wizErrorStyle.Render("✗ "+m.validErr) + "\n")
+		b.WriteString("\n\n  " + wizErrorStyle.Render("✗ "+m.validErr))
 	}
 
 	hint2 := "enter to confirm"
 	if optional {
 		hint2 = "enter to confirm  •  leave blank to skip"
 	}
-	b.WriteString(wizHelpStyle.Render("\n  " + hint2 + "  •  ctrl+c to abort"))
+	b.WriteString(wizHelpStyle.Render("\n\n  " + hint2 + "  •  esc back  •  ctrl+c abort"))
 	return b.String()
 }
 
@@ -830,19 +953,22 @@ func (m WizardModel) viewMoreCommands() string {
 
 	b.WriteString("  " + wizSubtitleStyle.Render("Add another shell command, or leave blank to finish adding steps.") + "\n\n")
 
-	display := m.inputBuf
-	if display == "" {
-		display = wizDimStyle.Render("e.g. npm run build  (leave blank to stop)")
+	// Build input content
+	inputContent := inputPromptStyle.Render("❯ ")
+	if m.inputBuf != "" {
+		inputContent += inputTextStyle.Render(m.inputBuf)
 	} else {
-		display = wizValueStyle.Render(display)
+		inputContent += inputPlaceholderStyle.Render("e.g. npm run build  (leave blank to stop)")
 	}
-	b.WriteString("  " + wizLabelStyle.Render(">") + " " + display + wizCursorStyle.Render("█") + "\n")
+	inputContent += inputCursorStyle.Render("▌")
+
+	b.WriteString(inputBoxStyle.Render(inputContent))
 
 	if m.validErr != "" {
-		b.WriteString("\n  " + wizErrorStyle.Render("✗ "+m.validErr) + "\n")
+		b.WriteString("\n\n  " + wizErrorStyle.Render("✗ "+m.validErr))
 	}
 
-	b.WriteString(wizHelpStyle.Render("\n  enter to add step / leave blank to finish  •  ctrl+c to abort"))
+	b.WriteString(wizHelpStyle.Render("\n\n  enter to add step / leave blank to finish  •  esc back  •  ctrl+c abort"))
 	return b.String()
 }
 
@@ -868,7 +994,7 @@ func (m WizardModel) viewOptionPicker(title, hint string, opts []wizOption) stri
 		b.WriteString(line + "\n")
 	}
 
-	b.WriteString(wizHelpStyle.Render("\n  ↑/↓ navigate  •  enter select  •  ctrl+c abort"))
+	b.WriteString(wizHelpStyle.Render("\n  ↑/↓ navigate  •  enter select  •  esc back  •  ctrl+c abort"))
 	return b.String()
 }
 
@@ -910,7 +1036,7 @@ func (m WizardModel) viewDeleteCmds() string {
 		b.WriteString("\n  " + wizErrorStyle.Render("✗ "+m.validErr) + "\n")
 	}
 
-	b.WriteString(wizHelpStyle.Render("\n  ↑/↓ navigate  •  space toggle  •  enter confirm  •  ctrl+c abort"))
+	b.WriteString(wizHelpStyle.Render("\n  ↑/↓ navigate  •  space toggle  •  enter confirm  •  esc back  •  ctrl+c abort"))
 	return b.String()
 }
 
@@ -951,7 +1077,7 @@ func (m WizardModel) viewSummary() string {
 
 	b.WriteString(wizSeparator + "\n")
 	b.WriteString(wizLabelStyle.Render("  Save to: ") + wizValueStyle.Render(m.savePath) + "\n")
-	b.WriteString(wizHelpStyle.Render("\n  Press enter to save  •  ctrl+c to abort"))
+	b.WriteString(wizHelpStyle.Render("\n  Press enter to save  •  esc back  •  ctrl+c abort"))
 	return b.String()
 }
 
