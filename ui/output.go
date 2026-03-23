@@ -44,8 +44,15 @@ func (m OutputModel) Init() tea.Cmd {
 func (m OutputModel) startStream() tea.Cmd {
 	return func() tea.Msg {
 		lines := make(chan runner.LogLine, 64)
-		if err := runner.Stream(m.cmd, lines); err != nil {
-			return outputDoneMsg{err: err}
+		// Use StreamWithBackground if the command has steps with background flag
+		if m.cmd.HasBackgroundSteps() {
+			if err := runner.StreamWithBackground(m.cmd, lines); err != nil {
+				return outputDoneMsg{err: err}
+			}
+		} else {
+			if err := runner.Stream(m.cmd, lines); err != nil {
+				return outputDoneMsg{err: err}
+			}
 		}
 		// Drain first line to kick things off; subsequent lines polled via tickCmd.
 		// We return the channel via a wrapper so we can read it in Update.
@@ -126,14 +133,27 @@ func (m OutputModel) View() string {
 
 	header := titleStyle.Render(fmt.Sprintf("Running: %s", m.cmd.Name))
 	b.WriteString(header + "\n")
-	steps := m.cmd.Steps()
-	if len(steps) == 1 {
-		b.WriteString(cmdStyle.Render("$ "+steps[0]) + "\n\n")
-	} else {
-		for i, step := range steps {
-			b.WriteString(cmdStyle.Render(fmt.Sprintf("  [%d] $ %s", i+1, step)) + "\n")
+
+	// Check if using the new Steps format with background support
+	if len(m.cmd.Steps) > 0 {
+		for i, step := range m.cmd.Steps {
+			prefix := "  "
+			if step.Background {
+				prefix = "[BG]"
+			}
+			b.WriteString(cmdStyle.Render(fmt.Sprintf("%s [%d] $ %s", prefix, i+1, step.Command)) + "\n")
 		}
 		b.WriteString("\n")
+	} else {
+		steps := m.cmd.AllSteps()
+		if len(steps) == 1 {
+			b.WriteString(cmdStyle.Render("$ "+steps[0]) + "\n\n")
+		} else {
+			for i, step := range steps {
+				b.WriteString(cmdStyle.Render(fmt.Sprintf("  [%d] $ %s", i+1, step)) + "\n")
+			}
+			b.WriteString("\n")
+		}
 	}
 
 	visible := m.height - 6
@@ -268,7 +288,7 @@ func (m BackgroundModel) View() string {
 	}
 
 	b.WriteString(titleStyle.Render(fmt.Sprintf("[BG] %s (%s)", m.cmd.Name, status)) + "\n")
-	steps := m.cmd.Steps()
+	steps := m.cmd.AllSteps()
 	if len(steps) == 1 {
 		b.WriteString(cmdStyle.Render("$ "+steps[0]) + "\n\n")
 	} else {

@@ -674,7 +674,7 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 			m.cmdDir = last.Dir
 			m.cmdGroup = last.Group
 			m.cmdRunMode = last.RunMode
-			steps := last.Steps()
+			steps := last.AllSteps()
 			if len(steps) > 0 {
 				m.cmdCommand = steps[0]
 			}
@@ -879,7 +879,7 @@ func (m WizardModel) viewEditHub() string {
 				name = wizOptStyle.Render(name)
 			}
 
-			steps := cmd.Steps()
+			steps := cmd.AllSteps()
 			var cmdPreview string
 			if len(steps) == 1 {
 				cmdPreview = wizDimStyle.Render("  $ " + steps[0])
@@ -1056,7 +1056,7 @@ func (m WizardModel) viewSummary() string {
 		if c.Description != "" {
 			b.WriteString(wizDimStyle.Render("    desc     ") + wizValueStyle.Render(c.Description) + "\n")
 		}
-		steps := c.Steps()
+		steps := c.AllSteps()
 		if len(steps) == 1 {
 			b.WriteString(wizDimStyle.Render("    command  ") + wizValueStyle.Render(steps[0]) + "\n")
 		} else {

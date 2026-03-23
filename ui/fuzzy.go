@@ -108,7 +108,7 @@ func (m *FuzzyModel) applyFilter() {
 	for _, c := range m.all {
 		matched := fuzzyMatch(m.query, c.Name) || fuzzyMatch(m.query, c.Description)
 		if !matched {
-			for _, step := range c.Steps() {
+			for _, step := range c.AllSteps() {
 				if fuzzyMatch(m.query, step) {
 					matched = true
 					break
@@ -295,7 +295,7 @@ func (m FuzzyModel) renderLines() []string {
 				line += "  " + descStyle.Render(cmd.Description)
 			}
 			lines = append(lines, line)
-			steps := cmd.Steps()
+			steps := cmd.AllSteps()
 			if len(steps) == 1 {
 				lines = append(lines, "    "+cmdStyle.Render("$ "+steps[0]))
 			} else if len(steps) > 1 {
@@ -326,7 +326,7 @@ func (m FuzzyModel) renderLines() []string {
 				line += "  " + descStyle.Render(e.cmd.Description)
 			}
 			lines = append(lines, line)
-			steps := e.cmd.Steps()
+			steps := e.cmd.AllSteps()
 			if len(steps) == 1 {
 				lines = append(lines, "      "+cmdStyle.Render("$ "+steps[0]))
 			} else if len(steps) > 1 {
@@ -350,7 +350,7 @@ func (m FuzzyModel) cursorLine() int {
 				return line
 			}
 			line++ // name line
-			if len(cmd.Steps()) > 0 {
+			if len(cmd.AllSteps()) > 0 {
 				line++ // cmd preview line
 			}
 		}
@@ -379,7 +379,7 @@ func (m FuzzyModel) cursorLine() int {
 			line++ // consume header line
 		} else {
 			line++ // consume name line
-			if len(e.cmd.Steps()) > 0 {
+			if len(e.cmd.AllSteps()) > 0 {
 				line++ // consume preview line
 			}
 		}

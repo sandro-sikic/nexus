@@ -7,6 +7,13 @@
 # Multi-step commands: use "commands" (list) instead of "command" (string)
 # to run several shell commands sequentially. Execution stops on first failure.
 #
+# For more advanced multi-step commands with background support, use "steps":
+#   steps:
+#     - command: "npm run dev"
+#       background: true    # This runs in the background
+#     - command: "npx playwright codegen"  # This runs in foreground
+# Background steps continue running while foreground steps execute sequentially.
+#
 # group: optional label — commands with the same group are shown together.
 
 title: "My Project Nexus"
@@ -78,3 +85,17 @@ commands:
     command: "ping -n 10 127.0.0.1"
     group: Utilities
     run_mode: background
+
+  # ── Mixed Foreground/Background ──────────────────────────
+  # Use the "steps" field to run some commands in the background
+  # while others run in the foreground.
+  # Background steps continue running while foreground steps execute.
+  
+  - name: Dev Server + Playwright
+    description: Start dev server in background, then run playwright codegen
+    steps:
+      - command: "npm run dev"
+        background: true
+      - command: "npx playwright codegen"
+    group: Development
+    run_mode: stream

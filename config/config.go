@@ -20,20 +20,35 @@ const (
 	RunModeBackground RunMode = "background"
 )
 
+// Step represents a single command step with optional background execution.
+type Step struct {
+	Command    string `yaml:"command"`
+	Background bool   `yaml:"background,omitempty"` // run this step in background
+}
+
 // Command represents a single runnable entry.
 type Command struct {
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
 	Command     string   `yaml:"command"`            // single shell command
-	Commands    []string `yaml:"commands,omitempty"` // multiple shell commands run sequentially
+	Commands    []string `yaml:"commands,omitempty"` // multiple shell commands run sequentially (legacy)
+	Steps       []Step   `yaml:"steps,omitempty"`    // multiple steps with background support
 	Dir         string   `yaml:"dir"`                // working directory (optional)
 	RunMode     RunMode  `yaml:"run_mode"`           // overrides top-level default
 	Group       string   `yaml:"group"`              // optional group label for display grouping
 }
 
-// Steps returns the ordered list of shell commands to run.
-// If Commands is set, it is used. Otherwise Command is returned as a single-item slice.
-func (c Command) Steps() []string {
+// AllSteps returns the ordered list of shell commands to run.
+// If Steps is set, commands are extracted from it. If Commands is set, it is used.
+// Otherwise Command is returned as a single-item slice.
+func (c Command) AllSteps() []string {
+	if len(c.Steps) > 0 {
+		cmds := make([]string, len(c.Steps))
+		for i, step := range c.Steps {
+			cmds[i] = step.Command
+		}
+		return cmds
+	}
 	if len(c.Commands) > 0 {
 		return c.Commands
 	}
@@ -41,6 +56,28 @@ func (c Command) Steps() []string {
 		return []string{c.Command}
 	}
 	return nil
+}
+
+// HasBackgroundSteps returns true if any step is marked as background.
+func (c Command) HasBackgroundSteps() bool {
+	for _, step := range c.Steps {
+		if step.Background {
+			return true
+		}
+	}
+	return false
+}
+
+// GetStep returns the Step at the given index if using Steps field, otherwise returns a Step with the command.
+func (c Command) GetStep(index int) Step {
+	if len(c.Steps) > 0 && index < len(c.Steps) {
+		return c.Steps[index]
+	}
+	cmds := c.AllSteps()
+	if index < len(cmds) {
+		return Step{Command: cmds[index]}
+	}
+	return Step{}
 }
 
 // Config is the root structure of nexus.yaml.

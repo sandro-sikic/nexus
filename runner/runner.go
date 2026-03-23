@@ -55,7 +55,7 @@ func buildCmd(cmd config.Command) *exec.Cmd {
 // Handoff runs each step of the command sequentially in the raw terminal,
 // stopping on the first failure.
 func Handoff(cmd config.Command) error {
-	steps := cmd.Steps()
+	steps := cmd.AllSteps()
 	if len(steps) == 0 {
 		return nil
 	}
@@ -78,7 +78,7 @@ func Handoff(cmd config.Command) error {
 // the provided channel. It closes the channel when all steps complete or a
 // step fails.
 func Stream(cmd config.Command, lines chan<- LogLine) error {
-	steps := cmd.Steps()
+	steps := cmd.AllSteps()
 	if len(steps) == 0 {
 		close(lines)
 		return nil
@@ -145,7 +145,7 @@ func streamOne(c *exec.Cmd, lines chan<- LogLine) error {
 // them sequentially, and returns a BackgroundProc whose Lines channel receives
 // all output.
 func RunBackground(cmd config.Command) (*BackgroundProc, error) {
-	steps := cmd.Steps()
+	steps := cmd.AllSteps()
 
 	lines := make(chan LogLine, 256)
 	done := make(chan struct{})
@@ -238,4 +238,123 @@ func FormatCommand(cmd string) string {
 		return strings.Join(parts[:4], " ") + " …"
 	}
 	return cmd
+}
+
+// StreamWithBackground runs steps with support for background steps.
+// Steps marked with Background=true are started in goroutines and continue running
+// while foreground steps execute sequentially. All output is streamed to the lines channel.
+func StreamWithBackground(cmd config.Command, lines chan LogLine) error {
+	allSteps := cmd.Steps
+	if len(allSteps) == 0 {
+		close(lines)
+		return nil
+	}
+
+	go func() {
+		defer close(lines)
+
+		// Track background processes so we can show their status
+		var bgProcs []*BackgroundProc
+
+		for i, step := range allSteps {
+			if step.Background {
+				// Start this step in the background
+				lines <- LogLine{
+					Text:  fmt.Sprintf("[%d/%d] Starting background: %s", i+1, len(allSteps), step.Command),
+					IsErr: false,
+				}
+
+				bp, err := runBackgroundStep(step.Command, cmd.Dir, lines)
+				if err != nil {
+					lines <- LogLine{
+						Text:  fmt.Sprintf("error: failed to start background step %d/%d: %v", i+1, len(allSteps), err),
+						IsErr: true,
+					}
+					continue
+				}
+				bgProcs = append(bgProcs, bp)
+			} else {
+				// Run this step in the foreground (blocking)
+				lines <- LogLine{
+					Text:  fmt.Sprintf("[%d/%d] %s", i+1, len(allSteps), step.Command),
+					IsErr: false,
+				}
+
+				if err := streamOne(buildCmdFromShell(step.Command, cmd.Dir), lines); err != nil {
+					lines <- LogLine{
+						Text:  fmt.Sprintf("error: step %d/%d %q: %v", i+1, len(allSteps), step.Command, err),
+						IsErr: true,
+					}
+					return
+				}
+			}
+		}
+
+		// Wait for all background processes to finish
+		if len(bgProcs) > 0 {
+			lines <- LogLine{
+				Text:  fmt.Sprintf("Waiting for %d background process(es) to complete...", len(bgProcs)),
+				IsErr: false,
+			}
+			for _, bp := range bgProcs {
+				bp.Wait()
+			}
+		}
+	}()
+
+	return nil
+}
+
+// runBackgroundStep starts a single command in the background and streams its output.
+func runBackgroundStep(shellCmd, dir string, lines chan LogLine) (*BackgroundProc, error) {
+	c := buildCmdFromShell(shellCmd, dir)
+
+	stdout, err := c.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+	stderr, err := c.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stderr pipe: %w", err)
+	}
+
+	if err := c.Start(); err != nil {
+		return nil, fmt.Errorf("start: %w", err)
+	}
+
+	done := make(chan struct{})
+	bp := &BackgroundProc{
+		Cmd:   c,
+		Lines: lines,
+		done:  done,
+	}
+
+	go func() {
+		defer func() {
+			bp.once.Do(func() { close(done) })
+		}()
+
+		var wg sync.WaitGroup
+		scan := func(r interface{ Read([]byte) (int, error) }, isErr bool) {
+			defer wg.Done()
+			scanner := bufio.NewScanner(r)
+			scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+			for scanner.Scan() {
+				lines <- LogLine{Text: "[BG] " + scanner.Text(), IsErr: isErr}
+			}
+		}
+		wg.Add(2)
+		go scan(stdout, false)
+		go scan(stderr, true)
+		wg.Wait()
+
+		if err := c.Wait(); err != nil {
+			lines <- LogLine{
+				Text:  fmt.Sprintf("[BG] error: %v", err),
+				IsErr: true,
+			}
+		}
+	}()
+
+	return bp, nil
 }

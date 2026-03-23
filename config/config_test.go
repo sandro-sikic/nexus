@@ -245,7 +245,7 @@ commands:
 
 func TestCommand_Steps_SingleCommand(t *testing.T) {
 	cmd := config.Command{Command: "echo hi"}
-	steps := cmd.Steps()
+	steps := cmd.AllSteps()
 	if len(steps) != 1 || steps[0] != "echo hi" {
 		t.Errorf("Steps(): got %v, want [echo hi]", steps)
 	}
@@ -253,7 +253,7 @@ func TestCommand_Steps_SingleCommand(t *testing.T) {
 
 func TestCommand_Steps_MultipleCommands(t *testing.T) {
 	cmd := config.Command{Commands: []string{"cd app", "npm run dev"}}
-	steps := cmd.Steps()
+	steps := cmd.AllSteps()
 	if len(steps) != 2 {
 		t.Fatalf("Steps() len: got %d, want 2", len(steps))
 	}
@@ -268,7 +268,7 @@ func TestCommand_Steps_CommandsFieldTakesPrecedence(t *testing.T) {
 		Command:  "single",
 		Commands: []string{"first", "second"},
 	}
-	steps := cmd.Steps()
+	steps := cmd.AllSteps()
 	if len(steps) != 2 || steps[0] != "first" {
 		t.Errorf("Steps() should use Commands when both set: got %v", steps)
 	}
@@ -276,7 +276,7 @@ func TestCommand_Steps_CommandsFieldTakesPrecedence(t *testing.T) {
 
 func TestCommand_Steps_Empty(t *testing.T) {
 	cmd := config.Command{}
-	steps := cmd.Steps()
+	steps := cmd.AllSteps()
 	if len(steps) != 0 {
 		t.Errorf("Steps() on empty command: got %v, want []", steps)
 	}
@@ -298,7 +298,7 @@ commands:
 	if len(cfg.Commands) != 1 {
 		t.Fatalf("commands: got %d, want 1", len(cfg.Commands))
 	}
-	steps := cfg.Commands[0].Steps()
+	steps := cfg.Commands[0].AllSteps()
 	if len(steps) != 3 {
 		t.Fatalf("Steps() len: got %d, want 3", len(steps))
 	}
@@ -330,7 +330,7 @@ commands:
 		t.Fatalf("reload: %v", err)
 	}
 
-	steps := reloaded.Commands[0].Steps()
+	steps := reloaded.Commands[0].AllSteps()
 	if len(steps) != 2 || steps[0] != "echo one" || steps[1] != "echo two" {
 		t.Errorf("round-trip Steps(): got %v", steps)
 	}

@@ -565,7 +565,7 @@ func TestWizard_MultiStep_CommitCommand(t *testing.T) {
 		Commands: []string{"npm install", "npm run dev"},
 		RunMode:  config.RunModeHandoff,
 	}
-	steps := cmd.Steps()
+	steps := cmd.AllSteps()
 	if len(steps) != 2 {
 		t.Fatalf("Steps() len: got %d, want 2", len(steps))
 	}

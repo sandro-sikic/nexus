@@ -78,7 +78,7 @@ func (m ListModel) View() string {
 		if cmd.Description != "" {
 			line += "  " + descStyle.Render(cmd.Description)
 		}
-		steps := cmd.Steps()
+		steps := cmd.AllSteps()
 		if len(steps) == 1 {
 			line += "\n    " + cmdStyle.Render("$ "+steps[0])
 		} else if len(steps) > 1 {

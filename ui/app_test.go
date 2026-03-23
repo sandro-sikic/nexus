@@ -443,9 +443,9 @@ func TestAppModel_HandoffMsg_CommandNamePreserved(t *testing.T) {
 	if m.handoffCmd == nil {
 		t.Fatal("handoffCmd should not be nil for multi-step handoff")
 	}
-	steps := m.handoffCmd.Steps()
+	steps := m.handoffCmd.AllSteps()
 	if len(steps) != 2 {
-		t.Fatalf("handoffCmd.Steps(): got %d steps, want 2", len(steps))
+		t.Fatalf("handoffCmd.AllSteps(): got %d steps, want 2", len(steps))
 	}
 	if steps[0] != "npm install" || steps[1] != "npm run dev" {
 		t.Errorf("handoffCmd steps: got %v", steps)

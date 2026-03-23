@@ -167,7 +167,7 @@ func RunFirstMatch(cfg *config.Config, query string) error {
 	for _, cmd := range cfg.Commands {
 		matched := fuzzyMatch(query, cmd.Name) || fuzzyMatch(query, cmd.Description)
 		if !matched {
-			for _, step := range cmd.Steps() {
+			for _, step := range cmd.AllSteps() {
 				if fuzzyMatch(query, step) {
 					matched = true
 					break
