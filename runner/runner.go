@@ -88,11 +88,11 @@ func Handoff(task config.Task) error {
 // Stream runs actions sequentially and sends output lines to the provided channel.
 // Background actions are started and continue while foreground actions execute.
 // The channel is closed when all actions complete or a foreground action fails.
-// If the last action has handoff=true, it is NOT executed (should be handled by HandoffLastAction).
+// If the task has handoff=true, the last action is NOT executed (should be handled by HandoffLastAction).
 func Stream(task config.Task, lines chan LogLine) error {
 	actions := task.Actions
-	// If last action has handoff, don't execute it here
-	if task.HasHandoff() && len(actions) > 0 {
+	// If task has handoff, don't execute last action here
+	if task.Handoff && len(actions) > 0 {
 		actions = actions[:len(actions)-1]
 	}
 
@@ -163,10 +163,10 @@ func Stream(task config.Task, lines chan LogLine) error {
 }
 
 // HandoffLastAction runs the last action of the task in the raw terminal.
-// This should be called after Stream() when the last action has handoff=true.
+// This should be called after Stream() when the task has handoff=true.
 // Returns nil if no handoff action exists.
 func HandoffLastAction(task config.Task) error {
-	if !task.HasHandoff() || len(task.Actions) == 0 {
+	if !task.Handoff || len(task.Actions) == 0 {
 		return nil
 	}
 

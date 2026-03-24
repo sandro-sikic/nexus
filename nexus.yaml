@@ -2,18 +2,25 @@
 #
 # Tasks execute with stream output inside the TUI by default.
 # To hand off the terminal to a command (e.g., for interactive programs),
-# set handoff: true on the LAST action only.
+# set handoff: true at the task level.
 #
 # Actions: use the "actions" field to define a list of commands to execute.
 # Each action can have:
 #   - command: the shell command to run (required)
 #   - background: true/false - whether to run in background (optional)
-#   - handoff: true/false - whether to hand off terminal (only valid for last action)
+#
+# Task fields:
+#   - name: task name (required)
+#   - description: task description (optional)
+#   - actions: list of commands to execute (required)
+#   - dir: working directory (optional)
+#   - group: group label for display (optional)
+#   - handoff: true/false - hand off terminal to the last action (optional)
 #
 # Rules:
 #   - Actions execute sequentially
-#   - Only the LAST action can have handoff: true
-#   - An action cannot have both background: true and handoff: true
+#   - When handoff: true, the LAST action is handed off to the terminal
+#   - An action cannot have both background: true and be the handoff action
 #   - Background actions continue running while foreground actions execute
 #
 # group: optional label — tasks with the same group are shown together.
@@ -26,7 +33,7 @@ tasks:
     description: Start the development server with hot reload
     actions:
       - command: "npm run dev"
-        handoff: true  # hand off terminal; Ctrl+C works normally
+    handoff: true  # hand off terminal; Ctrl+C works normally
     group: Development
 
   - name: Setup and Dev
@@ -34,14 +41,14 @@ tasks:
     actions:
       - command: "npm install"
       - command: "npm run dev"
-        handoff: true
+    handoff: true
     group: Development
 
   - name: Watch Tests
     description: Run tests in watch mode
     actions:
       - command: "npm run test:watch"
-        handoff: true
+    handoff: true
     group: Development
 
   - name: Type Check
@@ -61,7 +68,7 @@ tasks:
     description: Preview the production build locally
     actions:
       - command: "npm run preview"
-        handoff: true
+    handoff: true
     group: Build
 
   # ── Quality ──────────────────────────────────────────────
@@ -100,7 +107,7 @@ tasks:
       - command: "npm run dev"
         background: true
       - command: "npx playwright codegen"
-        handoff: true
+    handoff: true
     group: Development
 
   # ── Background Process Demo ──────────────────────────────

@@ -423,15 +423,11 @@ func TestWizard_CmdGroupStep_AlwaysShown(t *testing.T) {
 func TestWizard_CmdHandoff_No(t *testing.T) {
 	m := advanceToFirstCmd(t, "T", 0, 0)
 	m = addCommand(t, m, "A", "", "echo a", "", "", false /* no handoff */)
-	// committed task's last action should have Handoff = false
+	// committed task should have Handoff = false
 	if len(m.tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(m.tasks))
 	}
-	if len(m.tasks[0].Actions) == 0 {
-		t.Fatal("expected at least one action")
-	}
-	lastAction := m.tasks[0].Actions[len(m.tasks[0].Actions)-1]
-	if lastAction.Handoff {
+	if m.tasks[0].Handoff {
 		t.Errorf("handoff: got true, want false")
 	}
 }
@@ -442,11 +438,7 @@ func TestWizard_CmdHandoff_Yes(t *testing.T) {
 	if len(m.tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(m.tasks))
 	}
-	if len(m.tasks[0].Actions) == 0 {
-		t.Fatal("expected at least one action")
-	}
-	lastAction := m.tasks[0].Actions[len(m.tasks[0].Actions)-1]
-	if !lastAction.Handoff {
+	if !m.tasks[0].Handoff {
 		t.Errorf("handoff: got false, want true")
 	}
 }

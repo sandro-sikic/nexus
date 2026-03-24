@@ -23,7 +23,7 @@ func streamCmd(name, command string) config.Task {
 }
 
 func handoffCmd(name, command string) config.Task {
-	return config.Task{Name: name, Actions: []config.Action{{Command: command, Handoff: true}}}
+	return config.Task{Name: name, Actions: []config.Action{{Command: command}}, Handoff: true}
 }
 
 // updateApp sends a message and returns the concrete AppModel.
@@ -436,7 +436,8 @@ func TestAppModel_HandoffMsg_SetsQuitting(t *testing.T) {
 func TestAppModel_HandoffMsg_CommandNamePreserved(t *testing.T) {
 	multiStep := config.Task{
 		Name:    "Setup",
-		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run dev", Handoff: true}},
+		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run dev"}},
+		Handoff: true,
 	}
 	cfg := appCfg(multiStep)
 	m := NewApp(cfg)
@@ -489,7 +490,7 @@ func TestAppModel_EnterOnHandoffCmd_HandoffCmdSetAfterMsg(t *testing.T) {
 // ── HandleHandoff ─────────────────────────────────────────────────────────────
 
 func TestHandleHandoff_SuccessfulCommandReturnsNil(t *testing.T) {
-	c := config.Task{Name: "Echo", Actions: []config.Action{{Command: "echo handlehandoff-ok", Handoff: true}}}
+	c := config.Task{Name: "Echo", Actions: []config.Action{{Command: "echo handlehandoff-ok"}}, Handoff: true}
 	err := HandleHandoff(c)
 	if err != nil {
 		t.Errorf("HandleHandoff should return nil for successful command, got: %v", err)
@@ -497,7 +498,7 @@ func TestHandleHandoff_SuccessfulCommandReturnsNil(t *testing.T) {
 }
 
 func TestHandleHandoff_FailingCommandReturnsError(t *testing.T) {
-	c := config.Task{Name: "Fail", Actions: []config.Action{{Command: "exit 1", Handoff: true}}}
+	c := config.Task{Name: "Fail", Actions: []config.Action{{Command: "exit 1"}}, Handoff: true}
 	err := HandleHandoff(c)
 	if err == nil {
 		t.Error("HandleHandoff should return error when command exits non-zero")
@@ -505,7 +506,7 @@ func TestHandleHandoff_FailingCommandReturnsError(t *testing.T) {
 }
 
 func TestHandleHandoff_EmptyCommandReturnsNil(t *testing.T) {
-	c := config.Task{Name: "Empty", Actions: []config.Action{{Command: "", Handoff: true}}}
+	c := config.Task{Name: "Empty", Actions: []config.Action{{Command: ""}}, Handoff: true}
 	err := HandleHandoff(c)
 	if err != nil {
 		t.Errorf("HandleHandoff with empty command should return nil, got: %v", err)
@@ -528,7 +529,8 @@ func echoTask(name, description, shell string) config.Task {
 	return config.Task{
 		Name:        name,
 		Description: description,
-		Actions:     []config.Action{{Command: shell, Handoff: true}},
+		Actions:     []config.Action{{Command: shell}},
+		Handoff:     true,
 	}
 }
 
@@ -611,8 +613,8 @@ func TestRunFirstMatch_EmptyCommandList(t *testing.T) {
 // commands match, the first one in config order is executed, not a later one.
 // We detect this by using commands with distinct exit behaviors.
 func TestRunFirstMatch_RunsFirstMatchNotSecond(t *testing.T) {
-	first := config.Task{Name: "alpha", Actions: []config.Action{{Command: "echo first-ok", Handoff: true}}}
-	second := config.Task{Name: "alpha-two", Actions: []config.Action{{Command: "exit 1", Handoff: true}}}
+	first := config.Task{Name: "alpha", Actions: []config.Action{{Command: "echo first-ok"}}, Handoff: true}
+	second := config.Task{Name: "alpha-two", Actions: []config.Action{{Command: "exit 1"}}, Handoff: true}
 	cfg := matchCfg(first, second)
 	// "alpha" matches both "alpha" and "alpha-two"; first should win (no error).
 	if err := RunFirstMatch(cfg, "alpha"); err != nil {
@@ -635,7 +637,8 @@ func TestRunFirstMatch_FailingCommandPropagatesError(t *testing.T) {
 func TestRunFirstMatch_MultiStepCommand(t *testing.T) {
 	c := config.Task{
 		Name:    "setup",
-		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo step-two", Handoff: true}},
+		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo step-two"}},
+		Handoff: true,
 	}
 	cfg := matchCfg(c)
 	if err := RunFirstMatch(cfg, "setup"); err != nil {
@@ -650,7 +653,8 @@ func TestRunFirstMatch_MatchOnSecondStep(t *testing.T) {
 	// [n]ode-[r]un-[b]uild.
 	c := config.Task{
 		Name:    "pipeline",
-		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo node-run-build", Handoff: true}},
+		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo node-run-build"}},
+		Handoff: true,
 	}
 	cfg := matchCfg(c)
 	if err := RunFirstMatch(cfg, "nrb"); err != nil {

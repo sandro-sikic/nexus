@@ -102,8 +102,8 @@ func (m AppModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) launch(sel config.Task) (tea.Model, tea.Cmd) {
-	// Check if the last action has handoff enabled
-	if sel.HasHandoff() {
+	// Check if the task has handoff enabled
+	if sel.Handoff {
 		// For handoff we need to quit the TUI first, then exec the last action
 		m.quitting = true
 		return m, tea.Sequence(
@@ -205,7 +205,7 @@ func HandleHandoff(task config.Task) error {
 	fmt.Fprintf(os.Stderr, "Running: %s\n", task.Name)
 
 	// Stream all actions except the last one (if handoff)
-	if len(task.Actions) > 1 && task.HasHandoff() {
+	if len(task.Actions) > 1 && task.Handoff {
 		fmt.Fprintln(os.Stderr, "Executing setup actions...")
 		lines := make(chan runner.LogLine, 64)
 		if err := runner.Stream(task, lines); err != nil {

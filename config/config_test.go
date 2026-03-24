@@ -128,36 +128,36 @@ func TestLoad_MalformedTasks(t *testing.T) {
 	}
 }
 
-// ── Handoff field on Action ───────────────────────────────────────────────────
+// ── Handoff field on Task ────────────────────────────────────────────────────
 
 func TestTask_HasHandoff(t *testing.T) {
-	task := config.Task{Actions: []config.Action{{Command: "echo hi", Handoff: true}}}
+	task := config.Task{Handoff: true}
 	if !task.HasHandoff() {
 		t.Error("HasHandoff() = false, want true")
 	}
 }
 
 func TestTask_NoHandoff(t *testing.T) {
-	task := config.Task{Actions: []config.Action{{Command: "echo hi", Handoff: false}}}
+	task := config.Task{Handoff: false}
 	if task.HasHandoff() {
 		t.Error("HasHandoff() = true, want false")
 	}
 }
 
-func TestLoad_ActionHandoff(t *testing.T) {
+func TestLoad_TaskHandoff(t *testing.T) {
 	yaml := `
 tasks:
   - name: Deploy
     actions:
       - command: "make deploy"
-        handoff: true
+    handoff: true
 `
 	cfg, err := config.Load(writeTemp(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !cfg.Tasks[0].Actions[0].Handoff {
-		t.Errorf("action.handoff: got false, want true")
+	if !cfg.Tasks[0].Handoff {
+		t.Errorf("task.handoff: got false, want true")
 	}
 }
 

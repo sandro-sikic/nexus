@@ -638,11 +638,8 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 			m.cmdDesc = last.Description
 			m.cmdDir = last.Dir
 			m.cmdGroup = last.Group
-			// Restore handoff from last action
-			if len(last.Actions) > 0 {
-				lastAction := last.Actions[len(last.Actions)-1]
-				m.cmdLastHandoff = lastAction.Handoff
-			}
+			// Restore handoff from task
+			m.cmdLastHandoff = last.Handoff
 			// Restore actions as commands
 			if len(last.Actions) > 0 {
 				m.cmdCommand = last.Actions[0].Command
@@ -696,16 +693,14 @@ func (m *WizardModel) commitTask() {
 	for _, cmd := range m.cmdExtraCommands {
 		actions = append(actions, config.Action{Command: cmd, Background: false})
 	}
-	// Set handoff on the last action
-	if len(actions) > 0 {
-		actions[len(actions)-1].Handoff = m.cmdLastHandoff
-	}
+	// handoff is set at task level
 	task := config.Task{
 		Name:        m.cmdName,
 		Description: m.cmdDesc,
 		Dir:         m.cmdDir,
 		Group:       m.cmdGroup,
 		Actions:     actions,
+		Handoff:     m.cmdLastHandoff,
 	}
 	m.tasks = append(m.tasks, task)
 }
@@ -1038,7 +1033,7 @@ func (m WizardModel) viewSummary() string {
 		if t.Group != "" {
 			b.WriteString(wizDimStyle.Render("    group    ") + wizValueStyle.Render(t.Group) + "\n")
 		}
-		if len(t.Actions) > 0 && t.Actions[len(t.Actions)-1].Handoff {
+		if t.Handoff {
 			b.WriteString(wizDimStyle.Render("    handoff  ") + wizValueStyle.Render("yes") + "\n")
 		}
 		b.WriteString("\n")
