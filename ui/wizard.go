@@ -6,17 +6,16 @@ package ui
 // CREATE flow (no existing config):
 //  1. Welcome notice
 //  2. Project title
-//  3. Default run mode  (stream | handoff | background)
-//  4. Add first command  → sub-steps: name, description, command(s), dir,
+//  3. Add first command  → sub-steps: name, description, command(s), dir,
 //     group, per-command run_mode override
-//  5. "Add another command?" → yes loops back to 4, no proceeds
-//  6. Summary + confirm save
+//  4. "Add another command?" → yes loops back to 3, no proceeds
+//  5. Summary + confirm save
 //
 // EDIT flow (existing config):
 //  1. Hub screen — shows config summary + command list with delete checkboxes,
 //     plus an action menu:
 //       [d] delete marked commands
-//       [e] edit general settings (title / run_mode)
+//       [e] edit project title
 //       [a] add a new command
 //       [s] save & exit
 
@@ -96,18 +95,17 @@ const (
 	wizStepWelcome         wizStep = iota // 0  – info screen, press enter       (create only)
 	wizStepEditHub                        // 1  – overview + action menu          (edit only)
 	wizStepTitle                          // 2  – text input
-	wizStepRunMode                        // 3  – option picker
-	wizStepCmdName                        // 4  – text input
-	wizStepCmdDesc                        // 5  – text input (optional)
-	wizStepCmdCommand                     // 6  – text input (first shell command)
-	wizStepCmdMoreCommands                // 7  – repeat: add more shell commands (leave blank to stop)
-	wizStepCmdDir                         // 8  – text input (optional)
-	wizStepCmdGroup                       // 9  – text input (optional group label)
-	wizStepCmdRunMode                     // 10 – option picker (inherit | stream | handoff | background)
-	wizStepAddAnother                     // 11 – yes/no picker                  (create only)
-	wizStepDeleteCmds                     // 12 – multi-select delete             (create only, after add-another)
-	wizStepSummary                        // 13 – review + confirm
-	wizStepDone                           // 14 – finished
+	wizStepCmdName                        // 3  – text input
+	wizStepCmdDesc                        // 4  – text input (optional)
+	wizStepCmdCommand                     // 5  – text input (first shell command)
+	wizStepCmdMoreCommands                // 6  – repeat: add more shell commands (leave blank to stop)
+	wizStepCmdDir                         // 7  – text input (optional)
+	wizStepCmdGroup                       // 8  – text input (optional group label)
+	wizStepCmdHandoff                     // 9  – option picker (yes/no) for last action handoff
+	wizStepAddAnother                     // 10 – yes/no picker                  (create only)
+	wizStepDeleteCmds                     // 11 – multi-select delete             (create only, after add-another)
+	wizStepSummary                        // 12 – review + confirm
+	wizStepDone                           // 13 – finished
 )
 
 // ── Option picker ─────────────────────────────────────────────────────────────
@@ -136,8 +134,7 @@ type WizardModel struct {
 	returnToHub bool
 
 	// collected global config values
-	cfgTitle   string
-	cfgRunMode config.RunMode
+	cfgTitle string
 
 	// command being built
 	cmdName          string
@@ -146,7 +143,7 @@ type WizardModel struct {
 	cmdExtraCommands []string // additional shell commands (multi-step)
 	cmdDir           string
 	cmdGroup         string
-	cmdRunMode       config.RunMode // "" means "inherit"
+	cmdLastHandoff   bool // handoff setting for the last action
 
 	// accumulated tasks
 	tasks []config.Task
@@ -178,7 +175,6 @@ func NewWizardFromConfig(savePath string, cfg *config.Config) WizardModel {
 
 	// Pre-fill global fields.
 	m.cfgTitle = cfg.Title
-	m.cfgRunMode = cfg.RunMode
 
 	// Deep-copy tasks.
 	m.tasks = make([]config.Task, len(cfg.Tasks))
@@ -207,25 +203,16 @@ func (m WizardModel) Saved() bool { return m.saved }
 
 func (m WizardModel) buildConfig() *config.Config {
 	return &config.Config{
-		Title:   m.cfgTitle,
-		RunMode: m.cfgRunMode,
-		Tasks:   m.tasks,
+		Title: m.cfgTitle,
+		Tasks: m.tasks,
 	}
 }
 
 // ── Options tables ────────────────────────────────────────────────────────────
 
-var runModeOptions = []wizOption{
-	{value: string(config.RunModeStream), label: "stream", desc: "Stream output inside the TUI"},
-	{value: string(config.RunModeHandoff), label: "handoff", desc: "Hand off to the raw terminal"},
-	{value: string(config.RunModeBackground), label: "background", desc: "Run in background, tail logs in TUI"},
-}
-
-var cmdRunModeOptions = []wizOption{
-	{value: "", label: "inherit", desc: "Use the project default"},
-	{value: string(config.RunModeStream), label: "stream", desc: "Stream output inside the TUI"},
-	{value: string(config.RunModeHandoff), label: "handoff", desc: "Hand off to the raw terminal"},
-	{value: string(config.RunModeBackground), label: "background", desc: "Run in background, tail logs in TUI"},
+var handoffOptions = []wizOption{
+	{value: "no", label: "No", desc: "Run inside TUI (default)"},
+	{value: "yes", label: "Yes", desc: "Hand off to raw terminal for last command"},
 }
 
 var addAnotherOptions = []wizOption{
@@ -247,10 +234,8 @@ func optionIndex(opts []wizOption, v string) int {
 // currentOptions returns the option list for the current step (if any).
 func (m WizardModel) currentOptions() []wizOption {
 	switch m.step {
-	case wizStepRunMode:
-		return runModeOptions
-	case wizStepCmdRunMode:
-		return cmdRunModeOptions
+	case wizStepCmdHandoff:
+		return handoffOptions
 	case wizStepAddAnother:
 		return addAnotherOptions
 	}
@@ -416,14 +401,13 @@ func (m WizardModel) handleHubKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.validErr = ""
 
 		case "e", "E":
-			// Edit general settings: go to Title step, return to hub after RunMode.
+			// Edit project title.
 			m.returnToHub = true
 			m.inputBuf = m.cfgTitle
-			m.optCursor = optionIndex(runModeOptions, string(m.cfgRunMode))
 			m.step = wizStepTitle
 
 		case "a", "A":
-			// Add a new task: go to CmdName step, return to hub after RunMode.
+			// Add a new task: go to CmdName step, return to hub after Handoff step.
 			m.returnToHub = true
 			m.resetCmdFields()
 			m.optCursor = 0
@@ -458,16 +442,9 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 		}
 		m.cfgTitle = title
 		m.inputBuf = ""
-		m.optCursor = optionIndex(runModeOptions, string(m.cfgRunMode))
-		m.step = wizStepRunMode
-
-	// ── Default run mode ──────────────────────────────────────────────────
-	case wizStepRunMode:
-		m.cfgRunMode = config.RunMode(runModeOptions[m.optCursor].value)
-		m.inputBuf = ""
 		m.optCursor = 0
 		if m.returnToHub {
-			// Back to hub after editing general settings.
+			// Back to hub after editing project title.
 			m.returnToHub = false
 			m.step = wizStepEditHub
 		} else {
@@ -525,11 +502,11 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 		m.cmdGroup = strings.TrimSpace(m.inputBuf)
 		m.inputBuf = ""
 		m.optCursor = 0
-		m.step = wizStepCmdRunMode
+		m.step = wizStepCmdHandoff
 
-	// ── Task: per-task run mode override ────────────────────────────
-	case wizStepCmdRunMode:
-		m.cmdRunMode = config.RunMode(cmdRunModeOptions[m.optCursor].value)
+	// ── Task: handoff for last action ────────────────────────────────
+	case wizStepCmdHandoff:
+		m.cmdLastHandoff = handoffOptions[m.optCursor].value == "yes"
 		m.commitTask()
 		m.optCursor = 0
 		if m.returnToHub {
@@ -614,12 +591,7 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 			m.step = wizStepWelcome
 		}
 
-	// ── RunMode → Title (restore title into inputBuf) ────────────────────
-	case wizStepRunMode:
-		m.inputBuf = m.cfgTitle
-		m.step = wizStepTitle
-
-	// ── CmdName → RunMode (create) or EditHub (edit sub-flow) ───────────
+	// ── CmdName → Title (create) or EditHub (edit sub-flow) ───────────
 	case wizStepCmdName:
 		if m.returnToHub {
 			m.returnToHub = false
@@ -627,9 +599,8 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 			m.optCursor = 0
 			m.step = wizStepEditHub
 		} else {
-			m.inputBuf = ""
-			m.optCursor = optionIndex(runModeOptions, string(m.cfgRunMode))
-			m.step = wizStepRunMode
+			m.inputBuf = m.cfgTitle
+			m.step = wizStepTitle
 		}
 
 	// ── CmdDesc → CmdName (restore name) ────────────────────────────────
@@ -658,13 +629,7 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 		m.inputBuf = m.cmdDir
 		m.step = wizStepCmdDir
 
-	// ── CmdRunMode → CmdGroup (restore group) ───────────────────────────
-	case wizStepCmdRunMode:
-		m.inputBuf = m.cmdGroup
-		m.optCursor = 0
-		m.step = wizStepCmdGroup
-
-	// ── AddAnother → CmdRunMode (restore task fields, un-commit last task) ──
+	// ── AddAnother → CmdHandoff (restore task fields, un-commit last task) ──
 	case wizStepAddAnother:
 		if len(m.tasks) > 0 {
 			last := m.tasks[len(m.tasks)-1]
@@ -673,7 +638,11 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 			m.cmdDesc = last.Description
 			m.cmdDir = last.Dir
 			m.cmdGroup = last.Group
-			m.cmdRunMode = last.RunMode
+			// Restore handoff from last action
+			if len(last.Actions) > 0 {
+				lastAction := last.Actions[len(last.Actions)-1]
+				m.cmdLastHandoff = lastAction.Handoff
+			}
 			// Restore actions as commands
 			if len(last.Actions) > 0 {
 				m.cmdCommand = last.Actions[0].Command
@@ -686,8 +655,11 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 			}
 		}
 		m.inputBuf = ""
-		m.optCursor = 0
-		m.step = wizStepCmdRunMode
+		m.optCursor = optionIndex(handoffOptions, "yes")
+		if !m.cmdLastHandoff {
+			m.optCursor = optionIndex(handoffOptions, "no")
+		}
+		m.step = wizStepCmdHandoff
 
 	// ── DeleteCmds → AddAnother ──────────────────────────────────────────
 	case wizStepDeleteCmds:
@@ -717,10 +689,6 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 
 // commitTask appends the task being built to m.tasks.
 func (m *WizardModel) commitTask() {
-	rm := m.cmdRunMode
-	if rm == "" {
-		rm = m.cfgRunMode
-	}
 	// Build actions from commands
 	actions := []config.Action{
 		{Command: m.cmdCommand, Background: false},
@@ -728,12 +696,15 @@ func (m *WizardModel) commitTask() {
 	for _, cmd := range m.cmdExtraCommands {
 		actions = append(actions, config.Action{Command: cmd, Background: false})
 	}
+	// Set handoff on the last action
+	if len(actions) > 0 {
+		actions[len(actions)-1].Handoff = m.cmdLastHandoff
+	}
 	task := config.Task{
 		Name:        m.cmdName,
 		Description: m.cmdDesc,
 		Dir:         m.cmdDir,
 		Group:       m.cmdGroup,
-		RunMode:     rm,
 		Actions:     actions,
 	}
 	m.tasks = append(m.tasks, task)
@@ -747,7 +718,7 @@ func (m *WizardModel) resetCmdFields() {
 	m.cmdExtraCommands = nil
 	m.cmdDir = ""
 	m.cmdGroup = ""
-	m.cmdRunMode = ""
+	m.cmdLastHandoff = false
 	m.inputBuf = ""
 }
 
@@ -765,13 +736,6 @@ func (m WizardModel) View() string {
 			"A short name shown at the top of the menu.",
 			"e.g. My Project",
 			true,
-		)
-	case wizStepRunMode:
-		return m.viewOptionPicker(
-			"Default Run Mode",
-			"How should commands be executed by default?\n"+
-				wizDimStyle.Render("  (individual commands can override this)"),
-			runModeOptions,
 		)
 	case wizStepCmdName:
 		return m.viewTextInput(
@@ -810,11 +774,11 @@ func (m WizardModel) View() string {
 			"e.g. Development",
 			true,
 		)
-	case wizStepCmdRunMode:
+	case wizStepCmdHandoff:
 		return m.viewOptionPicker(
-			fmt.Sprintf("Task #%d — Run Mode", len(m.tasks)+1),
-			"Override the default run mode for this task, or inherit it.",
-			cmdRunModeOptions,
+			fmt.Sprintf("Task #%d — Handoff Terminal?", len(m.tasks)+1),
+			"Should the last command hand off to the raw terminal?",
+			handoffOptions,
 		)
 	case wizStepAddAnother:
 		return m.viewOptionPicker(
@@ -857,7 +821,6 @@ func (m WizardModel) viewEditHub() string {
 	// ── Global settings summary ───────────────────────────────────────────
 	b.WriteString(wizLabelStyle.Render("  Settings") + "\n")
 	b.WriteString(wizDimStyle.Render("    title     ") + wizValueStyle.Render(m.cfgTitle) + "\n")
-	b.WriteString(wizDimStyle.Render("    run_mode  ") + wizValueStyle.Render(string(m.cfgRunMode)) + "\n")
 	b.WriteString("\n")
 
 	// ── Task list with delete checkboxes ───────────────────────────────
@@ -906,7 +869,7 @@ func (m WizardModel) viewEditHub() string {
 	b.WriteString(wizLabelStyle.Render("  Actions") + "\n")
 	b.WriteString("  " + wizActionKeyStyle.Render("[space]") + "  " + wizActionStyle.Render("toggle delete mark on selected task") + "\n")
 	b.WriteString("  " + wizActionKeyStyle.Render("[d]    ") + "  " + wizActionStyle.Render("delete all marked tasks") + "\n")
-	b.WriteString("  " + wizActionKeyStyle.Render("[e]    ") + "  " + wizActionStyle.Render("edit general settings  (title / run_mode)") + "\n")
+	b.WriteString("  " + wizActionKeyStyle.Render("[e]    ") + "  " + wizActionStyle.Render("edit project title") + "\n")
 	b.WriteString("  " + wizActionKeyStyle.Render("[a]    ") + "  " + wizActionStyle.Render("add a new task") + "\n")
 	b.WriteString("  " + wizActionKeyStyle.Render("[s]    ") + "  " + wizActionStyle.Render("save & exit") + "\n")
 	b.WriteString(wizHelpStyle.Render("\n  ↑/↓ navigate tasks  •  ctrl+c abort"))
@@ -1053,7 +1016,6 @@ func (m WizardModel) viewSummary() string {
 	b.WriteString(wizSubtitleStyle.Render("  Review your configuration before saving.") + "\n")
 
 	b.WriteString(wizLabelStyle.Render("  Title      ") + wizValueStyle.Render(m.cfgTitle) + "\n")
-	b.WriteString(wizLabelStyle.Render("  Run Mode   ") + wizValueStyle.Render(string(m.cfgRunMode)) + "\n")
 	b.WriteString("\n")
 
 	for i, t := range m.tasks {
@@ -1076,7 +1038,9 @@ func (m WizardModel) viewSummary() string {
 		if t.Group != "" {
 			b.WriteString(wizDimStyle.Render("    group    ") + wizValueStyle.Render(t.Group) + "\n")
 		}
-		b.WriteString(wizDimStyle.Render("    run_mode ") + wizValueStyle.Render(string(t.RunMode)) + "\n")
+		if len(t.Actions) > 0 && t.Actions[len(t.Actions)-1].Handoff {
+			b.WriteString(wizDimStyle.Render("    handoff  ") + wizValueStyle.Render("yes") + "\n")
+		}
 		b.WriteString("\n")
 	}
 

@@ -27,7 +27,6 @@ func writeTemp(t *testing.T, content string) string {
 func TestLoad_FullConfig(t *testing.T) {
 	yaml := `
 title: "Test Nexus"
-run_mode: handoff
 tasks:
   - name: Build
     description: Build the project
@@ -35,7 +34,6 @@ tasks:
       - command: "make build"
         background: false
     dir: /tmp
-    run_mode: stream
     group: CI
 `
 	cfg, err := config.Load(writeTemp(t, yaml))
@@ -45,9 +43,6 @@ tasks:
 
 	if cfg.Title != "Test Nexus" {
 		t.Errorf("title: got %q, want %q", cfg.Title, "Test Nexus")
-	}
-	if cfg.RunMode != config.RunModeHandoff {
-		t.Errorf("run_mode: got %q, want %q", cfg.RunMode, config.RunModeHandoff)
 	}
 	if len(cfg.Tasks) != 1 {
 		t.Fatalf("tasks: got %d, want 1", len(cfg.Tasks))
@@ -72,9 +67,6 @@ tasks:
 	if task.Dir != "/tmp" {
 		t.Errorf("task.dir: got %q", task.Dir)
 	}
-	if task.RunMode != config.RunModeStream {
-		t.Errorf("task.run_mode: got %q, want stream", task.RunMode)
-	}
 	if task.Group != "CI" {
 		t.Errorf("task.group: got %q, want CI", task.Group)
 	}
@@ -89,85 +81,6 @@ func TestLoad_DefaultTitle(t *testing.T) {
 	}
 	if cfg.Title != "Nexus" {
 		t.Errorf("default title: got %q, want %q", cfg.Title, "Nexus")
-	}
-}
-
-func TestLoad_DefaultRunMode(t *testing.T) {
-	cfg, err := config.Load(writeTemp(t, "tasks: []"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.RunMode != config.RunModeStream {
-		t.Errorf("default run_mode: got %q, want stream", cfg.RunMode)
-	}
-}
-
-func TestLoad_TaskInheritsTopLevelRunMode(t *testing.T) {
-	yaml := `
-run_mode: background
-tasks:
-  - name: Test
-    actions:
-      - command: "echo hi"
-`
-	cfg, err := config.Load(writeTemp(t, yaml))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Tasks[0].RunMode != config.RunModeBackground {
-		t.Errorf("inherited run_mode: got %q, want background", cfg.Tasks[0].RunMode)
-	}
-}
-
-func TestLoad_TaskRunModeNotOverriddenWhenExplicit(t *testing.T) {
-	yaml := `
-run_mode: stream
-tasks:
-  - name: Deploy
-    actions:
-      - command: "make deploy"
-    run_mode: handoff
-`
-	cfg, err := config.Load(writeTemp(t, yaml))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Tasks[0].RunMode != config.RunModeHandoff {
-		t.Errorf("explicit run_mode: got %q, want handoff", cfg.Tasks[0].RunMode)
-	}
-}
-
-func TestLoad_MultipleTasksInheritance(t *testing.T) {
-	yaml := `
-run_mode: background
-tasks:
-  - name: A
-    actions:
-      - command: echo a
-  - name: B
-    actions:
-      - command: echo b
-    run_mode: stream
-  - name: C
-    actions:
-      - command: echo c
-`
-	cfg, err := config.Load(writeTemp(t, yaml))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	cases := []struct {
-		idx  int
-		want config.RunMode
-	}{
-		{0, config.RunModeBackground},
-		{1, config.RunModeStream},
-		{2, config.RunModeBackground},
-	}
-	for _, tc := range cases {
-		if got := cfg.Tasks[tc.idx].RunMode; got != tc.want {
-			t.Errorf("tasks[%d].run_mode: got %q, want %q", tc.idx, got, tc.want)
-		}
 	}
 }
 
@@ -215,18 +128,36 @@ func TestLoad_MalformedTasks(t *testing.T) {
 	}
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Handoff field on Action ───────────────────────────────────────────────────
 
-func TestConstants(t *testing.T) {
-	// Ensure string values stay stable — they're used in YAML files.
-	if string(config.RunModeStream) != "stream" {
-		t.Errorf("RunModeStream = %q, want stream", config.RunModeStream)
+func TestTask_HasHandoff(t *testing.T) {
+	task := config.Task{Actions: []config.Action{{Command: "echo hi", Handoff: true}}}
+	if !task.HasHandoff() {
+		t.Error("HasHandoff() = false, want true")
 	}
-	if string(config.RunModeHandoff) != "handoff" {
-		t.Errorf("RunModeHandoff = %q, want handoff", config.RunModeHandoff)
+}
+
+func TestTask_NoHandoff(t *testing.T) {
+	task := config.Task{Actions: []config.Action{{Command: "echo hi", Handoff: false}}}
+	if task.HasHandoff() {
+		t.Error("HasHandoff() = true, want false")
 	}
-	if string(config.RunModeBackground) != "background" {
-		t.Errorf("RunModeBackground = %q, want background", config.RunModeBackground)
+}
+
+func TestLoad_ActionHandoff(t *testing.T) {
+	yaml := `
+tasks:
+  - name: Deploy
+    actions:
+      - command: "make deploy"
+        handoff: true
+`
+	cfg, err := config.Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.Tasks[0].Actions[0].Handoff {
+		t.Errorf("action.handoff: got false, want true")
 	}
 }
 
@@ -319,7 +250,6 @@ tasks:
     actions:
       - command: echo one
       - command: echo two
-    run_mode: stream
 `)
 	cfg, err := config.Load(path)
 	if err != nil {

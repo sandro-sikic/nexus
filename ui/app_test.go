@@ -11,20 +11,19 @@ import (
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func appCfg(runMode config.RunMode, cmds ...config.Task) *config.Config {
+func appCfg(cmds ...config.Task) *config.Config {
 	return &config.Config{
-		Title:   "App Test",
-		RunMode: runMode,
-		Tasks:   cmds,
+		Title: "App Test",
+		Tasks: cmds,
 	}
 }
 
 func streamCmd(name, command string) config.Task {
-	return config.Task{Name: name, Actions: []config.Action{{Command: command}}, RunMode: config.RunModeStream}
+	return config.Task{Name: name, Actions: []config.Action{{Command: command}}}
 }
 
 func handoffCmd(name, command string) config.Task {
-	return config.Task{Name: name, Actions: []config.Action{{Command: command}}, RunMode: config.RunModeHandoff}
+	return config.Task{Name: name, Actions: []config.Action{{Command: command, Handoff: true}}}
 }
 
 // updateApp sends a message and returns the concrete AppModel.
@@ -40,7 +39,7 @@ func updateApp(m AppModel, msg tea.Msg) AppModel {
 // ── Construction ──────────────────────────────────────────────────────────────
 
 func TestNewApp_ListMode(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	if m.cfg != cfg {
 		t.Error("cfg not stored")
@@ -54,7 +53,7 @@ func TestNewApp_ListMode(t *testing.T) {
 }
 
 func TestNewApp_FuzzyMode(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	if len(m.fuzzy.all) != 1 {
 		t.Errorf("fuzzy model not populated: got %d cmds", len(m.fuzzy.all))
@@ -62,7 +61,7 @@ func TestNewApp_FuzzyMode(t *testing.T) {
 }
 
 func TestNewApp_GroupMode(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, gtask("A", []string{"a"}, "G"))
+	cfg := appCfg(gtask("A", []string{"a"}, "G"))
 	m := NewApp(cfg)
 	if len(m.fuzzy.entries) == 0 {
 		t.Error("fuzzy group entries not populated")
@@ -70,7 +69,7 @@ func TestNewApp_GroupMode(t *testing.T) {
 }
 
 func TestAppModel_Init_ReturnsNilForList(t *testing.T) {
-	cfg := appCfg(config.RunModeStream)
+	cfg := appCfg()
 	m := NewApp(cfg)
 	if m.Init() != nil {
 		t.Error("Init() for list mode should return nil")
@@ -80,7 +79,7 @@ func TestAppModel_Init_ReturnsNilForList(t *testing.T) {
 // ── Quit from menu ────────────────────────────────────────────────────────────
 
 func TestAppModel_QuitFromMenu(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m = updateApp(m, keyMsg("q"))
 	if !m.quitting {
@@ -89,7 +88,7 @@ func TestAppModel_QuitFromMenu(t *testing.T) {
 }
 
 func TestAppModel_CtrlCQuits(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyCtrlC})
 	if !m.quitting {
@@ -100,7 +99,7 @@ func TestAppModel_CtrlCQuits(t *testing.T) {
 // ── Back from output view ─────────────────────────────────────────────────────
 
 func TestAppModel_QFromOutputGoesBackToMenu(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m.state = stateOutput
 	m = updateApp(m, keyMsg("q"))
@@ -113,7 +112,7 @@ func TestAppModel_QFromOutputGoesBackToMenu(t *testing.T) {
 }
 
 func TestAppModel_EscFromOutputGoesBackToMenu(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m.state = stateOutput
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEsc})
@@ -123,7 +122,7 @@ func TestAppModel_EscFromOutputGoesBackToMenu(t *testing.T) {
 }
 
 func TestAppModel_EscFromBGGoesBackToMenu(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m.state = stateBG
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEsc})
@@ -133,7 +132,7 @@ func TestAppModel_EscFromBGGoesBackToMenu(t *testing.T) {
 }
 
 func TestAppModel_BackFromOutputClearsSelection(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("X", "echo x"))
+	cfg := appCfg(streamCmd("X", "echo x"))
 	m := NewApp(cfg)
 	m.state = stateOutput
 	// Manually set a selection to confirm it's cleared
@@ -146,7 +145,7 @@ func TestAppModel_BackFromOutputClearsSelection(t *testing.T) {
 }
 
 func TestAppModel_EscFromMenuDoesNothing(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	before := m.state
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEsc})
@@ -161,7 +160,7 @@ func TestAppModel_EscFromMenuDoesNothing(t *testing.T) {
 // ── Stream launch ─────────────────────────────────────────────────────────────
 
 func TestAppModel_EnterOnStreamCmdTransitionsToOutput(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("Echo", "echo hello"))
+	cfg := appCfg(streamCmd("Echo", "echo hello"))
 	m := NewApp(cfg)
 	// Press enter to select the first (and only) command
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -171,7 +170,7 @@ func TestAppModel_EnterOnStreamCmdTransitionsToOutput(t *testing.T) {
 }
 
 func TestAppModel_OutputStream_CmdNameStored(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("MyEcho", "echo x"))
+	cfg := appCfg(streamCmd("MyEcho", "echo x"))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.output.task.Name != "MyEcho" {
@@ -182,7 +181,7 @@ func TestAppModel_OutputStream_CmdNameStored(t *testing.T) {
 // ── Handoff launch ────────────────────────────────────────────────────────────
 
 func TestAppModel_EnterOnHandoffCmdSetsQuitting(t *testing.T) {
-	cfg := appCfg(config.RunModeHandoff, handoffCmd("Dev", "npm run dev"))
+	cfg := appCfg(handoffCmd("Dev", "npm run dev"))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if !m.quitting {
@@ -193,7 +192,7 @@ func TestAppModel_EnterOnHandoffCmdSetsQuitting(t *testing.T) {
 // ── Fuzzy mode integration ────────────────────────────────────────────────────
 
 func TestAppModel_FuzzyModeSelectTransitionsToOutput(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("Build", "make build"))
+	cfg := appCfg(streamCmd("Build", "make build"))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.state != stateOutput {
@@ -202,7 +201,7 @@ func TestAppModel_FuzzyModeSelectTransitionsToOutput(t *testing.T) {
 }
 
 func TestAppModel_FuzzyModeTypingFilters(t *testing.T) {
-	cfg := appCfg(config.RunModeStream,
+	cfg := appCfg(
 		streamCmd("Build", "make build"),
 		streamCmd("Test", "go test"),
 	)
@@ -216,7 +215,7 @@ func TestAppModel_FuzzyModeTypingFilters(t *testing.T) {
 // ── Group mode integration ────────────────────────────────────────────────────
 
 func TestAppModel_GroupModeSelectTransitionsToOutput(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, gtask("Deploy", []string{"kubectl apply"}, "Ops"))
+	cfg := appCfg(gtask("Deploy", []string{"kubectl apply"}, "Ops"))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.state != stateOutput {
@@ -227,7 +226,7 @@ func TestAppModel_GroupModeSelectTransitionsToOutput(t *testing.T) {
 // ── WindowSize propagation ────────────────────────────────────────────────────
 
 func TestAppModel_WindowSizeInMenuState(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.WindowSizeMsg{Width: 200, Height: 50})
 	if m.fuzzy.width != 200 || m.fuzzy.height != 50 {
@@ -236,7 +235,7 @@ func TestAppModel_WindowSizeInMenuState(t *testing.T) {
 }
 
 func TestAppModel_WindowSizeInOutputState(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m.state = stateOutput
 	m = updateApp(m, tea.WindowSizeMsg{Width: 150, Height: 35})
@@ -248,7 +247,7 @@ func TestAppModel_WindowSizeInOutputState(t *testing.T) {
 // ── View ──────────────────────────────────────────────────────────────────────
 
 func TestAppModel_ViewEmptyWhenQuitting(t *testing.T) {
-	cfg := appCfg(config.RunModeStream)
+	cfg := appCfg()
 	m := NewApp(cfg)
 	m.quitting = true
 	if m.View() != "" {
@@ -257,7 +256,7 @@ func TestAppModel_ViewEmptyWhenQuitting(t *testing.T) {
 }
 
 func TestAppModel_ViewShowsErrorWhenErrSet(t *testing.T) {
-	cfg := appCfg(config.RunModeStream)
+	cfg := appCfg()
 	m := NewApp(cfg)
 	m.err = "something broke"
 	v := m.View()
@@ -267,7 +266,7 @@ func TestAppModel_ViewShowsErrorWhenErrSet(t *testing.T) {
 }
 
 func TestAppModel_ViewDelegatesListInMenuState(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("ListCmd", "lc"))
+	cfg := appCfg(streamCmd("ListCmd", "lc"))
 	m := NewApp(cfg)
 	v := m.View()
 	if !strings.Contains(v, "ListCmd") {
@@ -276,10 +275,10 @@ func TestAppModel_ViewDelegatesListInMenuState(t *testing.T) {
 }
 
 func TestAppModel_ViewDelegatesOutputInOutputState(t *testing.T) {
-	cfg := appCfg(config.RunModeStream)
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m.state = stateOutput
-	m.output = NewOutputModel(config.Task{Name: "OutputCmdX", Actions: []config.Action{{Command: "x"}}, RunMode: config.RunModeStream})
+	m.output = NewOutputModel(streamCmd("OutputCmdX", "x"))
 	v := m.View()
 	if !strings.Contains(v, "OutputCmdX") {
 		t.Errorf("output view should contain cmd name:\n%s", v)
@@ -287,10 +286,10 @@ func TestAppModel_ViewDelegatesOutputInOutputState(t *testing.T) {
 }
 
 func TestAppModel_ViewDelegatesBGInBGState(t *testing.T) {
-	cfg := appCfg(config.RunModeStream)
+	cfg := appCfg()
 	m := NewApp(cfg)
 	m.state = stateBG
-	m.bg = BackgroundModel{task: config.Task{Name: "BGTaskX", Actions: []config.Action{{Command: "x"}}, RunMode: config.RunModeBackground}, height: 24}
+	m.bg = BackgroundModel{task: streamCmd("BGTaskX", "x"), height: 24}
 	v := m.View()
 	if !strings.Contains(v, "BGTaskX") {
 		t.Errorf("bg view should contain cmd name:\n%s", v)
@@ -300,7 +299,7 @@ func TestAppModel_ViewDelegatesBGInBGState(t *testing.T) {
 // ── selection nil by default ──────────────────────────────────────────────────
 
 func TestAppModel_SelectedCmdNilByDefault(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	if m.fuzzy.Selected() != nil {
 		t.Error("fuzzy.Selected() should be nil by default")
@@ -312,13 +311,13 @@ func TestAppModel_SelectedCmdNilByDefault(t *testing.T) {
 func bgTask(name string, commands []string) config.Task {
 	actions := make([]config.Action, len(commands))
 	for i, cmd := range commands {
-		actions[i] = config.Action{Command: cmd}
+		actions[i] = config.Action{Command: cmd, Background: true}
 	}
-	return config.Task{Name: name, Actions: actions, RunMode: config.RunModeBackground}
-}
+	return config.Task{Name: name, Actions: actions}
 
+}
 func TestAppModel_EnterOnBackgroundCmdTransitionsToBG(t *testing.T) {
-	cfg := appCfg(config.RunModeBackground, bgTask("BgTask", []string{"echo bg"}))
+	cfg := appCfg(bgTask("BgTask", []string{"echo bg"}))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.state != stateBG {
@@ -327,7 +326,7 @@ func TestAppModel_EnterOnBackgroundCmdTransitionsToBG(t *testing.T) {
 }
 
 func TestAppModel_BackgroundLaunch_CmdNameStored(t *testing.T) {
-	cfg := appCfg(config.RunModeBackground, bgTask("MyBGTask", []string{"echo hi"}))
+	cfg := appCfg(bgTask("MyBGTask", []string{"echo hi"}))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.bg.task.Name != "MyBGTask" {
@@ -341,9 +340,8 @@ func TestAppModel_BackgroundLaunch_ErrorPath(t *testing.T) {
 		Name:    "BadDir",
 		Actions: []config.Action{{Command: "echo hi"}},
 		Dir:     "/this/path/does/not/exist/xyz",
-		RunMode: config.RunModeBackground,
 	}
-	cfg := appCfg(config.RunModeBackground, c)
+	cfg := appCfg(c)
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	// On platforms where the dir doesn't exist at Start time, m.err will be set.
@@ -359,10 +357,10 @@ func TestAppModel_BackgroundLaunch_ErrorPath(t *testing.T) {
 // ── updateBG delegation ───────────────────────────────────────────────────────
 
 func TestAppModel_UpdateBGDelegatesToBGModel(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
+	cfg := appCfg(streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m.state = stateBG
-	m.bg = BackgroundModel{task: config.Task{Name: "BGX", Actions: []config.Action{{Command: "x"}}, RunMode: config.RunModeBackground}, height: 24}
+	m.bg = BackgroundModel{task: streamCmd("BGX", "x"), height: 24}
 	// Send a window size; should be handled by bg model
 	m = updateApp(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	if m.bg.width != 100 || m.bg.height != 30 {
@@ -376,7 +374,7 @@ func TestAppModel_LaunchFromFuzzyGroupView(t *testing.T) {
 	tmp := t.TempDir()
 	cfgPath := filepath.Join(tmp, "nexus.yaml")
 
-	cfg := appCfg(config.RunModeStream,
+	cfg := appCfg(
 		streamCmd("First", "echo 1"),
 		streamCmd("Second", "echo 2"),
 	)
@@ -404,7 +402,7 @@ func TestAppModel_LaunchFromFuzzyGroupView(t *testing.T) {
 // TestAppModel_HandoffMsg_SetsHandoffCmd verifies that receiving a handoffMsg
 // stores the command in handoffCmd and does NOT leave it nil.
 func TestAppModel_HandoffMsg_SetsHandoffCmd(t *testing.T) {
-	cfg := appCfg(config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
+	cfg := appCfg(handoffCmd("Dev", "echo dev"))
 	m := NewApp(cfg)
 	sel := cfg.Tasks[0]
 	m = updateApp(m, handoffMsg{task: sel})
@@ -418,7 +416,7 @@ func TestAppModel_HandoffMsg_SetsHandoffCmd(t *testing.T) {
 
 // TestAppModel_HandoffMsg_SetsQuitting verifies the model quits after handoffMsg.
 func TestAppModel_HandoffMsg_SetsQuitting(t *testing.T) {
-	cfg := appCfg(config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
+	cfg := appCfg(handoffCmd("Dev", "echo dev"))
 	m := NewApp(cfg)
 	sel := cfg.Tasks[0]
 
@@ -438,10 +436,9 @@ func TestAppModel_HandoffMsg_SetsQuitting(t *testing.T) {
 func TestAppModel_HandoffMsg_CommandNamePreserved(t *testing.T) {
 	multiStep := config.Task{
 		Name:    "Setup",
-		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run dev"}},
-		RunMode: config.RunModeHandoff,
+		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run dev", Handoff: true}},
 	}
-	cfg := appCfg(config.RunModeHandoff, multiStep)
+	cfg := appCfg(multiStep)
 	m := NewApp(cfg)
 	m = updateApp(m, handoffMsg{task: multiStep})
 	if m.handoffTask == nil {
@@ -458,7 +455,7 @@ func TestAppModel_HandoffMsg_CommandNamePreserved(t *testing.T) {
 
 // TestAppModel_HandoffMsg_NilByDefaultBeforeLaunch verifies handoffCmd starts nil.
 func TestAppModel_HandoffMsg_NilByDefaultBeforeLaunch(t *testing.T) {
-	cfg := appCfg(config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
+	cfg := appCfg(handoffCmd("Dev", "echo dev"))
 	m := NewApp(cfg)
 	if m.handoffTask != nil {
 		t.Error("handoffCmd should be nil before any command is selected")
@@ -470,7 +467,7 @@ func TestAppModel_HandoffMsg_NilByDefaultBeforeLaunch(t *testing.T) {
 // This reproduces the exact hang scenario: user presses enter on a handoff
 // command; previously the terminal would hang because handoffCmd was never set.
 func TestAppModel_EnterOnHandoffCmd_HandoffCmdSetAfterMsg(t *testing.T) {
-	cfg := appCfg(config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
+	cfg := appCfg(handoffCmd("Dev", "echo dev"))
 	m := NewApp(cfg)
 
 	// Step 1: press enter — this calls launch() which emits tea.Sequence(
@@ -492,7 +489,7 @@ func TestAppModel_EnterOnHandoffCmd_HandoffCmdSetAfterMsg(t *testing.T) {
 // ── HandleHandoff ─────────────────────────────────────────────────────────────
 
 func TestHandleHandoff_SuccessfulCommandReturnsNil(t *testing.T) {
-	c := config.Task{Name: "Echo", Actions: []config.Action{{Command: "echo handlehandoff-ok"}}, RunMode: config.RunModeHandoff}
+	c := config.Task{Name: "Echo", Actions: []config.Action{{Command: "echo handlehandoff-ok", Handoff: true}}}
 	err := HandleHandoff(c)
 	if err != nil {
 		t.Errorf("HandleHandoff should return nil for successful command, got: %v", err)
@@ -500,7 +497,7 @@ func TestHandleHandoff_SuccessfulCommandReturnsNil(t *testing.T) {
 }
 
 func TestHandleHandoff_FailingCommandReturnsError(t *testing.T) {
-	c := config.Task{Name: "Fail", Actions: []config.Action{{Command: "exit 1"}}, RunMode: config.RunModeHandoff}
+	c := config.Task{Name: "Fail", Actions: []config.Action{{Command: "exit 1", Handoff: true}}}
 	err := HandleHandoff(c)
 	if err == nil {
 		t.Error("HandleHandoff should return error when command exits non-zero")
@@ -508,7 +505,7 @@ func TestHandleHandoff_FailingCommandReturnsError(t *testing.T) {
 }
 
 func TestHandleHandoff_EmptyCommandReturnsNil(t *testing.T) {
-	c := config.Task{Name: "Empty", Actions: []config.Action{{Command: ""}}, RunMode: config.RunModeHandoff}
+	c := config.Task{Name: "Empty", Actions: []config.Action{{Command: "", Handoff: true}}}
 	err := HandleHandoff(c)
 	if err != nil {
 		t.Errorf("HandleHandoff with empty command should return nil, got: %v", err)
@@ -521,9 +518,9 @@ func TestHandleHandoff_EmptyCommandReturnsNil(t *testing.T) {
 // irrelevant for RunFirstMatch (it never starts the TUI), so we just use List.
 func matchCfg(tasks ...config.Task) *config.Config {
 	return &config.Config{
-		Title:   "Match Test",
-		RunMode: config.RunModeHandoff,
-		Tasks:   tasks,
+		Title: "Match Test",
+
+		Tasks: tasks,
 	}
 }
 
@@ -531,8 +528,7 @@ func echoTask(name, description, shell string) config.Task {
 	return config.Task{
 		Name:        name,
 		Description: description,
-		Actions:     []config.Action{{Command: shell}},
-		RunMode:     config.RunModeHandoff,
+		Actions:     []config.Action{{Command: shell, Handoff: true}},
 	}
 }
 
@@ -615,8 +611,8 @@ func TestRunFirstMatch_EmptyCommandList(t *testing.T) {
 // commands match, the first one in config order is executed, not a later one.
 // We detect this by using commands with distinct exit behaviors.
 func TestRunFirstMatch_RunsFirstMatchNotSecond(t *testing.T) {
-	first := config.Task{Name: "alpha", Actions: []config.Action{{Command: "echo first-ok"}}, RunMode: config.RunModeHandoff}
-	second := config.Task{Name: "alpha-two", Actions: []config.Action{{Command: "exit 1"}}, RunMode: config.RunModeHandoff}
+	first := config.Task{Name: "alpha", Actions: []config.Action{{Command: "echo first-ok", Handoff: true}}}
+	second := config.Task{Name: "alpha-two", Actions: []config.Action{{Command: "exit 1", Handoff: true}}}
 	cfg := matchCfg(first, second)
 	// "alpha" matches both "alpha" and "alpha-two"; first should win (no error).
 	if err := RunFirstMatch(cfg, "alpha"); err != nil {
@@ -639,8 +635,7 @@ func TestRunFirstMatch_FailingCommandPropagatesError(t *testing.T) {
 func TestRunFirstMatch_MultiStepCommand(t *testing.T) {
 	c := config.Task{
 		Name:    "setup",
-		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo step-two"}},
-		RunMode: config.RunModeHandoff,
+		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo step-two", Handoff: true}},
 	}
 	cfg := matchCfg(c)
 	if err := RunFirstMatch(cfg, "setup"); err != nil {
@@ -655,8 +650,7 @@ func TestRunFirstMatch_MatchOnSecondStep(t *testing.T) {
 	// [n]ode-[r]un-[b]uild.
 	c := config.Task{
 		Name:    "pipeline",
-		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo node-run-build"}},
-		RunMode: config.RunModeHandoff,
+		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo node-run-build", Handoff: true}},
 	}
 	cfg := matchCfg(c)
 	if err := RunFirstMatch(cfg, "nrb"); err != nil {

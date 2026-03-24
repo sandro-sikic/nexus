@@ -11,29 +11,20 @@ import (
 // ErrNotFound is returned by Load when the config file does not exist.
 var ErrNotFound = errors.New("config file not found")
 
-// RunMode controls how a selected action is executed.
-type RunMode string
-
-const (
-	RunModeStream     RunMode = "stream"
-	RunModeHandoff    RunMode = "handoff"
-	RunModeBackground RunMode = "background"
-)
-
-// Action represents a single executable shell command with optional background execution.
+// Action represents a single executable shell command.
 type Action struct {
 	Command    string `yaml:"command"`
 	Background bool   `yaml:"background,omitempty"` // run this action in background
+	Handoff    bool   `yaml:"handoff,omitempty"`    // hand off terminal for this action (only valid for last action)
 }
 
 // Task represents a named task with multiple actions to execute.
 type Task struct {
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
-	Actions     []Action `yaml:"actions"`  // list of actions to execute sequentially
-	Dir         string   `yaml:"dir"`      // working directory (optional)
-	RunMode     RunMode  `yaml:"run_mode"` // overrides top-level default
-	Group       string   `yaml:"group"`    // optional group label for display grouping
+	Actions     []Action `yaml:"actions"` // list of actions to execute sequentially
+	Dir         string   `yaml:"dir"`     // working directory (optional)
+	Group       string   `yaml:"group"`   // optional group label for display grouping
 }
 
 // AllCommands returns all shell commands as strings for display purposes.
@@ -55,11 +46,26 @@ func (t Task) HasBackgroundActions() bool {
 	return false
 }
 
+// HasHandoff returns true if the last action has handoff enabled.
+func (t Task) HasHandoff() bool {
+	if len(t.Actions) == 0 {
+		return false
+	}
+	return t.Actions[len(t.Actions)-1].Handoff
+}
+
+// LastAction returns the last action of the task, or nil if no actions.
+func (t Task) LastAction() *Action {
+	if len(t.Actions) == 0 {
+		return nil
+	}
+	return &t.Actions[len(t.Actions)-1]
+}
+
 // Config is the root structure of nexus.yaml.
 type Config struct {
-	Title   string  `yaml:"title"`
-	RunMode RunMode `yaml:"run_mode"` // default run mode
-	Tasks   []Task  `yaml:"tasks"`
+	Title string `yaml:"title"`
+	Tasks []Task `yaml:"tasks"`
 }
 
 // Write serialises cfg to a YAML file at path, creating it if necessary.
@@ -90,18 +96,8 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Apply defaults
-	if cfg.RunMode == "" {
-		cfg.RunMode = RunModeStream
-	}
 	if cfg.Title == "" {
 		cfg.Title = "Nexus"
-	}
-
-	// Per-task defaults
-	for i := range cfg.Tasks {
-		if cfg.Tasks[i].RunMode == "" {
-			cfg.Tasks[i].RunMode = cfg.RunMode
-		}
 	}
 
 	return &cfg, nil

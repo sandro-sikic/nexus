@@ -12,9 +12,9 @@ import (
 
 func listCfg(tasks ...config.Task) *config.Config {
 	return &config.Config{
-		Title:   "Test",
-		RunMode: config.RunModeStream,
-		Tasks:   tasks,
+		Title: "Test",
+
+		Tasks: tasks,
 	}
 }
 
@@ -23,7 +23,7 @@ func task(name string, commands []string) config.Task {
 	for i, cmd := range commands {
 		actions[i] = config.Action{Command: cmd}
 	}
-	return config.Task{Name: name, Actions: actions, RunMode: config.RunModeStream}
+	return config.Task{Name: name, Actions: actions}
 }
 
 func cmd(name, command string) config.Task {
@@ -230,7 +230,7 @@ func TestListModel_ViewContainsCommands(t *testing.T) {
 }
 
 func TestListModel_ViewContainsDescription(t *testing.T) {
-	tst := config.Task{Name: "X", Description: "does things", Actions: []config.Action{{Command: "x"}}, RunMode: config.RunModeStream}
+	tst := config.Task{Name: "X", Description: "does things", Actions: []config.Action{{Command: "x"}}}
 	m := NewListModel(listCfg(tst))
 	v := m.View()
 	if !strings.Contains(v, "does things") {

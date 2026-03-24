@@ -12,9 +12,9 @@ import (
 
 func groupCfg(tasks ...config.Task) *config.Config {
 	return &config.Config{
-		Title:   "Group Test",
-		RunMode: config.RunModeStream,
-		Tasks:   tasks,
+		Title: "Group Test",
+
+		Tasks: tasks,
 	}
 }
 
@@ -23,7 +23,7 @@ func gtask(name string, commands []string, group string) config.Task {
 	for i, cmd := range commands {
 		actions[i] = config.Action{Command: cmd}
 	}
-	return config.Task{Name: name, Actions: actions, Group: group, RunMode: config.RunModeStream}
+	return config.Task{Name: name, Actions: actions, Group: group}
 }
 
 // ── Construction ──────────────────────────────────────────────────────────────
@@ -282,7 +282,7 @@ func TestGroupModel_ViewContainsHelpText(t *testing.T) {
 }
 
 func TestGroupModel_ViewDescriptionRendered(t *testing.T) {
-	tst := config.Task{Name: "X", Description: "my desc", Actions: []config.Action{{Command: "x"}}, Group: "G", RunMode: config.RunModeStream}
+	tst := config.Task{Name: "X", Description: "my desc", Actions: []config.Action{{Command: "x"}}, Group: "G"}
 	m := NewGroupModel(groupCfg(tst))
 	v := m.View()
 	if !strings.Contains(v, "my desc") {

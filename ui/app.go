@@ -102,21 +102,18 @@ func (m AppModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) launch(sel config.Task) (tea.Model, tea.Cmd) {
-	switch sel.RunMode {
-	case config.RunModeHandoff:
-		// For handoff we need to quit the TUI first, then exec
+	// Check if the last action has handoff enabled
+	if sel.HasHandoff() {
+		// For handoff we need to quit the TUI first, then exec the last action
 		m.quitting = true
 		return m, tea.Sequence(
 			tea.ExitAltScreen,
 			func() tea.Msg { return handoffMsg{task: sel} },
 		)
+	}
 
-	case config.RunModeStream:
-		m.output = NewOutputModel(sel)
-		m.state = stateOutput
-		return m, m.output.Init()
-
-	case config.RunModeBackground:
+	// Check if any action has background enabled
+	if sel.HasBackgroundActions() {
 		bg, err := NewBackgroundModel(sel)
 		if err != nil {
 			m.err = err.Error()
@@ -126,7 +123,11 @@ func (m AppModel) launch(sel config.Task) (tea.Model, tea.Cmd) {
 		m.state = stateBG
 		return m, m.bg.Init()
 	}
-	return m, nil
+
+	// Default: stream output inside TUI
+	m.output = NewOutputModel(sel)
+	m.state = stateOutput
+	return m, m.output.Init()
 }
 
 type handoffMsg struct{ task config.Task }
@@ -202,8 +203,30 @@ func Run(cfg *config.Config, cfgPath string) error {
 // HandleHandoff is called outside the TUI after it exits for handoff mode.
 func HandleHandoff(task config.Task) error {
 	fmt.Fprintf(os.Stderr, "Running: %s\n", task.Name)
-	if len(task.Actions) > 0 {
-		fmt.Fprintf(os.Stderr, "$ %s\n\n", task.Actions[0].Command)
+
+	// Stream all actions except the last one (if handoff)
+	if len(task.Actions) > 1 && task.HasHandoff() {
+		fmt.Fprintln(os.Stderr, "Executing setup actions...")
+		lines := make(chan runner.LogLine, 64)
+		if err := runner.Stream(task, lines); err != nil {
+			return err
+		}
+		// Drain the lines channel
+		for line := range lines {
+			if line.IsErr {
+				fmt.Fprintln(os.Stderr, line.Text)
+			} else {
+				fmt.Fprintln(os.Stderr, line.Text)
+			}
+		}
+		fmt.Fprintln(os.Stderr)
 	}
-	return runner.Handoff(task)
+
+	// Handoff the last action to the raw terminal
+	if len(task.Actions) > 0 {
+		lastAction := task.Actions[len(task.Actions)-1]
+		fmt.Fprintf(os.Stderr, "$ %s\n\n", lastAction.Command)
+	}
+
+	return runner.HandoffLastAction(task)
 }

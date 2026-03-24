@@ -114,10 +114,10 @@ func confirmDelete(t *testing.T, m WizardModel) WizardModel {
 	return pressEnter(t, m)
 }
 
-// advanceToFirstCmd drives the wizard to just past the "default run mode" step
-// (i.e. ready for the first command), using the given title and runMode index
-// (0-based within runModeOptions). The uiModeIdx parameter is kept for
-// compatibility but is ignored — UI mode is no longer configurable.
+// advanceToFirstCmd drives the wizard to just past the title step
+// (i.e. ready for the first command), using the given title.
+// The uiModeIdx and runModeIdx parameters are kept for compatibility
+// but are ignored — project-level run mode is no longer configurable.
 func advanceToFirstCmd(t *testing.T, title string, uiModeIdx, runModeIdx int) WizardModel {
 	t.Helper()
 	m := NewWizard("out.yaml")
@@ -131,15 +131,6 @@ func advanceToFirstCmd(t *testing.T, title string, uiModeIdx, runModeIdx int) Wi
 	// Title
 	m = typeText(t, m, title)
 	m = pressEnter(t, m)
-	if m.step != wizStepRunMode {
-		t.Fatalf("expected wizStepRunMode, got %d", m.step)
-	}
-
-	// Run mode
-	for i := 0; i < runModeIdx; i++ {
-		m = pressDown(t, m)
-	}
-	m = pressEnter(t, m)
 	if m.step != wizStepCmdName {
 		t.Fatalf("expected wizStepCmdName, got %d", m.step)
 	}
@@ -147,8 +138,8 @@ func advanceToFirstCmd(t *testing.T, title string, uiModeIdx, runModeIdx int) Wi
 }
 
 // addCommand drives through all command sub-steps.
-// runModeIdx: index in cmdRunModeOptions (0 = inherit).
-func addCommand(t *testing.T, m WizardModel, name, desc, command, dir, group string, runModeIdx int) WizardModel {
+// handoff: whether to enable handoff for the last action.
+func addCommand(t *testing.T, m WizardModel, name, desc, command, dir, group string, handoff bool) WizardModel {
 	t.Helper()
 
 	// Name
@@ -191,16 +182,17 @@ func addCommand(t *testing.T, m WizardModel, name, desc, command, dir, group str
 		m = pressEnter(t, m)
 	}
 
-	// Run mode override
-	if m.step != wizStepCmdRunMode {
-		t.Fatalf("expected wizStepCmdRunMode, got %d", m.step)
+	// Handoff step
+	if m.step != wizStepCmdHandoff {
+		t.Fatalf("expected wizStepCmdHandoff, got %d", m.step)
 	}
-	for i := 0; i < runModeIdx; i++ {
-		m = pressDown(t, m)
+	// handoffOptions: 0 = no, 1 = yes
+	if handoff {
+		m = pressDown(t, m) // select yes
 	}
 	m = pressEnter(t, m)
 
-	// After CmdRunMode, we land on wizStepAddAnother (create flow) or
+	// After CmdHandoff, we land on wizStepAddAnother (create flow) or
 	// wizStepEditHub (edit flow, returnToHub=true). Both are valid endings.
 	if m.step != wizStepAddAnother && m.step != wizStepEditHub {
 		t.Fatalf("expected wizStepAddAnother or wizStepEditHub, got %d", m.step)
@@ -293,8 +285,8 @@ func TestWizard_TitleTypingAndConfirm(t *testing.T) {
 	if m.cfgTitle != "My Runner" {
 		t.Errorf("cfgTitle: got %q, want My Runner", m.cfgTitle)
 	}
-	if m.step != wizStepRunMode {
-		t.Errorf("should advance to wizStepRunMode, got %d", m.step)
+	if m.step != wizStepCmdName {
+		t.Errorf("should advance to wizStepCmdName, got %d", m.step)
 	}
 }
 
@@ -343,38 +335,14 @@ func TestWizard_TitleAdvancesDirectlyToRunMode(t *testing.T) {
 	m := NewWizard("x.yaml")
 	m = pressEnter(t, m) // welcome
 	m = pressEnter(t, m) // title (blank → "Nexus")
-	if m.step != wizStepRunMode {
-		t.Errorf("expected wizStepRunMode after title, got %d", m.step)
+	if m.step != wizStepCmdName {
+		t.Errorf("expected wizStepCmdName after title, got %d", m.step)
 	}
 }
 
-func TestWizard_RunModePickerReachable(t *testing.T) {
+func TestWizard_FirstCmdStepReachable(t *testing.T) {
 	m := advanceToFirstCmd(t, "T", 0, 0)
 	_ = m // just assert it didn't panic
-}
-
-// ── Run mode step ─────────────────────────────────────────────────────────────
-
-func TestWizard_RunModePicker_Stream(t *testing.T) {
-	m := advanceToFirstCmd(t, "T", 0, 0)
-	// runModeIdx 0 = stream
-	if m.cfgRunMode != config.RunModeStream {
-		t.Errorf("cfgRunMode: got %q, want stream", m.cfgRunMode)
-	}
-}
-
-func TestWizard_RunModePicker_Handoff(t *testing.T) {
-	m := advanceToFirstCmd(t, "T", 0, 1)
-	if m.cfgRunMode != config.RunModeHandoff {
-		t.Errorf("cfgRunMode: got %q, want handoff", m.cfgRunMode)
-	}
-}
-
-func TestWizard_RunModePicker_Background(t *testing.T) {
-	m := advanceToFirstCmd(t, "T", 0, 2)
-	if m.cfgRunMode != config.RunModeBackground {
-		t.Errorf("cfgRunMode: got %q, want background", m.cfgRunMode)
-	}
 }
 
 // ── Command steps ─────────────────────────────────────────────────────────────
@@ -452,23 +420,34 @@ func TestWizard_CmdGroupStep_AlwaysShown(t *testing.T) {
 	}
 }
 
-func TestWizard_CmdRunMode_Inherit(t *testing.T) {
-	m := advanceToFirstCmd(t, "T", 0, 0) // default run_mode = stream
-	m = addCommand(t, m, "A", "", "echo a", "", "", 0 /* inherit */)
-	// committed task's RunMode should be equal to the inherited default (stream)
+func TestWizard_CmdHandoff_No(t *testing.T) {
+	m := advanceToFirstCmd(t, "T", 0, 0)
+	m = addCommand(t, m, "A", "", "echo a", "", "", false /* no handoff */)
+	// committed task's last action should have Handoff = false
 	if len(m.tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(m.tasks))
 	}
-	if m.tasks[0].RunMode != config.RunModeStream {
-		t.Errorf("inherited run_mode: got %q, want stream", m.tasks[0].RunMode)
+	if len(m.tasks[0].Actions) == 0 {
+		t.Fatal("expected at least one action")
+	}
+	lastAction := m.tasks[0].Actions[len(m.tasks[0].Actions)-1]
+	if lastAction.Handoff {
+		t.Errorf("handoff: got true, want false")
 	}
 }
 
-func TestWizard_CmdRunMode_ExplicitHandoff(t *testing.T) {
+func TestWizard_CmdHandoff_Yes(t *testing.T) {
 	m := advanceToFirstCmd(t, "T", 0, 0)
-	m = addCommand(t, m, "B", "", "echo b", "", "", 2 /* handoff */)
-	if m.tasks[0].RunMode != config.RunModeHandoff {
-		t.Errorf("explicit run_mode: got %q, want handoff", m.tasks[0].RunMode)
+	m = addCommand(t, m, "B", "", "echo b", "", "", true /* handoff */)
+	if len(m.tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(m.tasks))
+	}
+	if len(m.tasks[0].Actions) == 0 {
+		t.Fatal("expected at least one action")
+	}
+	lastAction := m.tasks[0].Actions[len(m.tasks[0].Actions)-1]
+	if !lastAction.Handoff {
+		t.Errorf("handoff: got false, want true")
 	}
 }
 
@@ -476,7 +455,7 @@ func TestWizard_CmdRunMode_ExplicitHandoff(t *testing.T) {
 
 func TestWizard_AddAnotherYesLoopsBack(t *testing.T) {
 	m := advanceToFirstCmd(t, "T", 0, 0)
-	m = addCommand(t, m, "First", "", "echo 1", "", "", 0)
+	m = addCommand(t, m, "First", "", "echo 1", "", "", false)
 	// addAnother = "yes" (index 0)
 	m = pressEnter(t, m)
 	if m.step != wizStepCmdName {
@@ -489,7 +468,7 @@ func TestWizard_AddAnotherYesLoopsBack(t *testing.T) {
 
 func TestWizard_AddAnotherNoAdvancesToDeleteStep(t *testing.T) {
 	m := advanceToFirstCmd(t, "T", 0, 0)
-	m = addCommand(t, m, "Only", "", "echo only", "", "", 0)
+	m = addCommand(t, m, "Only", "", "echo only", "", "", false)
 	// addAnother = "no" (index 1)
 	m = pressDown(t, m)
 	m = pressEnter(t, m)
@@ -500,7 +479,7 @@ func TestWizard_AddAnotherNoAdvancesToDeleteStep(t *testing.T) {
 
 func TestWizard_DeleteStepConfirmNoMarksGoesToSummary(t *testing.T) {
 	m := advanceToFirstCmd(t, "T", 0, 0)
-	m = addCommand(t, m, "Only", "", "echo only", "", "", 0)
+	m = addCommand(t, m, "Only", "", "echo only", "", "", false)
 	m = pressDown(t, m)  // addAnother = no
 	m = pressEnter(t, m) // → delete step
 	m = confirmDelete(t, m)
@@ -511,9 +490,9 @@ func TestWizard_DeleteStepConfirmNoMarksGoesToSummary(t *testing.T) {
 
 func TestWizard_TwoTasksCommitted(t *testing.T) {
 	m := advanceToFirstCmd(t, "T", 0, 0)
-	m = addCommand(t, m, "First", "f desc", "echo 1", "/tmp", "", 0)
+	m = addCommand(t, m, "First", "f desc", "echo 1", "/tmp", "", false)
 	m = pressEnter(t, m) // addAnother = yes
-	m = addCommand(t, m, "Second", "", "echo 2", "", "", 1 /* stream */)
+	m = addCommand(t, m, "Second", "", "echo 2", "", "", false)
 	if len(m.tasks) != 2 {
 		t.Errorf("expected 2 tasks, got %d", len(m.tasks))
 	}
@@ -524,7 +503,7 @@ func TestWizard_TwoTasksCommitted(t *testing.T) {
 
 func TestWizard_TaskFieldsStoredCorrectly(t *testing.T) {
 	m := advanceToFirstCmd(t, "MyApp", 0, 0)
-	m = addCommand(t, m, "Build", "compile it", "make build", "/src", "", 0)
+	m = addCommand(t, m, "Build", "compile it", "make build", "/src", "", false)
 	c := m.tasks[0]
 	if c.Name != "Build" {
 		t.Errorf("Name: got %q", c.Name)
@@ -567,12 +546,12 @@ func TestWizard_GroupMode_GroupFieldStored(t *testing.T) {
 
 func TestWizard_SummaryViewContainsAllFields(t *testing.T) {
 	m := advanceToFirstCmd(t, "My Project", 0, 0)
-	m = addCommand(t, m, "Build", "compile", "make build", "/src", "", 0)
+	m = addCommand(t, m, "Build", "compile", "make build", "/src", "", false)
 	m = pressDown(t, m)     // addAnother = no
 	m = pressEnter(t, m)    // → delete step
 	m = confirmDelete(t, m) // → summary
 	v := m.View()
-	fields := []string{"My Project", "stream", "Build", "compile", "make build", "/src"}
+	fields := []string{"My Project", "Build", "compile", "make build", "/src"}
 	for _, f := range fields {
 		if !strings.Contains(v, f) {
 			t.Errorf("summary view missing %q:\n%s", f, v)
@@ -585,7 +564,7 @@ func TestWizard_SummaryViewContainsSavePath(t *testing.T) {
 	m = pressEnter(t, m) // welcome
 	m = pressEnter(t, m) // title
 	m = pressEnter(t, m) // runMode
-	m = addCommand(t, m, "X", "", "echo x", "", "", 0)
+	m = addCommand(t, m, "X", "", "echo x", "", "", false)
 	m = pressDown(t, m)     // no
 	m = pressEnter(t, m)    // → delete step
 	m = confirmDelete(t, m) // → summary
@@ -601,7 +580,7 @@ func TestWizard_SaveWritesFile(t *testing.T) {
 	m = typeText(t, m, "Save Test")
 	m = pressEnter(t, m) // title
 	m = pressEnter(t, m) // runMode = stream
-	m = addCommand(t, m, "Echo", "desc", "echo hello", "", "", 0)
+	m = addCommand(t, m, "Echo", "desc", "echo hello", "", "", false)
 	m = pressDown(t, m)     // addAnother = no
 	m = pressEnter(t, m)    // → delete step
 	m = confirmDelete(t, m) // → summary (no deletions)
@@ -637,7 +616,7 @@ func TestWizard_SaveErrorRecorded(t *testing.T) {
 	m = pressEnter(t, m) // welcome
 	m = pressEnter(t, m) // title
 	m = pressEnter(t, m) // runMode
-	m = addCommand(t, m, "X", "", "echo x", "", "", 0)
+	m = addCommand(t, m, "X", "", "echo x", "", "", false)
 	m = pressDown(t, m)
 	m = pressEnter(t, m)    // → delete step
 	m = confirmDelete(t, m) // → summary
@@ -655,18 +634,13 @@ func TestWizard_SaveErrorRecorded(t *testing.T) {
 func TestWizard_BuildConfigAssemblesCorrectly(t *testing.T) {
 	m := NewWizard("x.yaml")
 	m.cfgTitle = "Assembled"
-	m.cfgRunMode = config.RunModeHandoff
 	m.tasks = []config.Task{
-		{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream},
-		{Name: "B", Actions: []config.Action{{Command: "b"}}, RunMode: config.RunModeHandoff},
+		{Name: "A", Actions: []config.Action{{Command: "a"}}},
+		{Name: "B", Actions: []config.Action{{Command: "b"}}},
 	}
-
 	cfg := m.buildConfig()
 	if cfg.Title != "Assembled" {
 		t.Errorf("Title: got %q", cfg.Title)
-	}
-	if cfg.RunMode != config.RunModeHandoff {
-		t.Errorf("RunMode: got %q", cfg.RunMode)
 	}
 	if len(cfg.Tasks) != 2 {
 		t.Errorf("Tasks: got %d", len(cfg.Tasks))
@@ -735,10 +709,10 @@ func TestWizard_ViewOptionPickerShowsRunModeOptions(t *testing.T) {
 	m := NewWizard("x.yaml")
 	m = pressEnter(t, m) // welcome
 	m = pressEnter(t, m) // title
-	// now on runMode picker (no UIMode step)
+	// now on cmdName step (no project-level run mode step)
 	v := m.View()
-	if !strings.Contains(v, "stream") || !strings.Contains(v, "handoff") || !strings.Contains(v, "background") {
-		t.Errorf("run mode picker missing options:\n%s", v)
+	if !strings.Contains(v, "Name") {
+		t.Errorf("cmd name step missing 'Name':\n%s", v)
 	}
 }
 
@@ -769,11 +743,10 @@ func TestConfig_WriteAndLoad_RoundTrip(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "round-trip.yaml")
 
 	original := &config.Config{
-		Title:   "Round Trip",
-		RunMode: config.RunModeBackground,
+		Title: "Round Trip",
 		Tasks: []config.Task{
-			{Name: "A", Description: "desc a", Actions: []config.Action{{Command: "echo a"}}, Dir: "/tmp", Group: "G1", RunMode: config.RunModeStream},
-			{Name: "B", Actions: []config.Action{{Command: "echo b"}}, RunMode: config.RunModeHandoff},
+			{Name: "A", Description: "desc a", Actions: []config.Action{{Command: "echo a"}}, Dir: "/tmp", Group: "G1"},
+			{Name: "B", Actions: []config.Action{{Command: "echo b"}}},
 		},
 	}
 
@@ -789,15 +762,12 @@ func TestConfig_WriteAndLoad_RoundTrip(t *testing.T) {
 	if loaded.Title != original.Title {
 		t.Errorf("Title: got %q, want %q", loaded.Title, original.Title)
 	}
-	if loaded.RunMode != original.RunMode {
-		t.Errorf("RunMode: got %q, want %q", loaded.RunMode, original.RunMode)
-	}
 	if len(loaded.Tasks) != len(original.Tasks) {
 		t.Fatalf("Tasks len: got %d, want %d", len(loaded.Tasks), len(original.Tasks))
 	}
 	for i, tsk := range original.Tasks {
 		lt := loaded.Tasks[i]
-		if lt.Name != tsk.Name || lt.RunMode != tsk.RunMode {
+		if lt.Name != tsk.Name {
 			t.Errorf("tasks[%d]: got %+v, want %+v", i, lt, tsk)
 		}
 	}
@@ -811,7 +781,7 @@ func advanceToDelete(t *testing.T, tasks []struct{ name, command string }) Wizar
 	t.Helper()
 	m := advanceToFirstCmd(t, "T", 0, 0)
 	for i, c := range tasks {
-		m = addCommand(t, m, c.name, "", c.command, "", "", 0)
+		m = addCommand(t, m, c.name, "", c.command, "", "", false)
 		if i < len(tasks)-1 {
 			// say "yes" to add another
 			m = pressEnter(t, m)
@@ -1027,9 +997,9 @@ func TestWizard_DeleteAndSave_FileHasCorrectTasks(t *testing.T) {
 	m = pressEnter(t, m) // runMode
 
 	// Add two tasks.
-	m = addCommand(t, m, "Keep", "", "echo keep", "", "", 0)
+	m = addCommand(t, m, "Keep", "", "echo keep", "", "", false)
 	m = pressEnter(t, m) // addAnother = yes
-	m = addCommand(t, m, "Remove", "", "echo remove", "", "", 0)
+	m = addCommand(t, m, "Remove", "", "echo remove", "", "", false)
 	m = pressDown(t, m)     // addAnother = no
 	m = pressEnter(t, m)    // → delete step
 	m = pressDown(t, m)     // cursor → Remove (index 1)
@@ -1057,9 +1027,8 @@ func TestWizard_DeleteAndSave_FileHasCorrectTasks(t *testing.T) {
 
 func TestNewWizardFromConfig_EditingFlag(t *testing.T) {
 	cfg := &config.Config{
-		Title:   "My App",
-		RunMode: config.RunModeHandoff,
-		Tasks:   []config.Task{{Name: "A", Actions: []config.Action{{Command: "echo a"}}, RunMode: config.RunModeHandoff}},
+		Title: "My App",
+		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "echo a"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	if !m.editing {
@@ -1068,7 +1037,7 @@ func TestNewWizardFromConfig_EditingFlag(t *testing.T) {
 }
 
 func TestNewWizardFromConfig_PrePopulatesTitle(t *testing.T) {
-	cfg := &config.Config{Title: "Pre-filled", RunMode: config.RunModeStream}
+	cfg := &config.Config{Title: "Pre-filled", Tasks: []config.Task{}}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	// In edit mode, press 'e' from the hub to reach the title step.
 	// The inputBuf is seeded with the existing title.
@@ -1083,21 +1052,21 @@ func TestNewWizardFromConfig_PrePopulatesTitle(t *testing.T) {
 
 func TestNewWizardFromConfig_PrePopulatesGlobalFields(t *testing.T) {
 	cfg := &config.Config{
-		Title:   "X",
-		RunMode: config.RunModeBackground,
+		Title: "X",
+		Tasks: []config.Task{},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
-	if m.cfgRunMode != config.RunModeBackground {
-		t.Errorf("cfgRunMode: got %q, want background", m.cfgRunMode)
+	if m.cfgTitle != "X" {
+		t.Errorf("cfgTitle: got %q, want X", m.cfgTitle)
 	}
 }
 
 func TestNewWizardFromConfig_CopiesTasks(t *testing.T) {
 	orig := []config.Task{
-		{Name: "Build", Actions: []config.Action{{Command: "make build"}}, RunMode: config.RunModeStream},
-		{Name: "Test", Actions: []config.Action{{Command: "go test"}}, RunMode: config.RunModeStream},
+		{Name: "Build", Actions: []config.Action{{Command: "make build"}}},
+		{Name: "Test", Actions: []config.Action{{Command: "go test"}}},
 	}
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream, Tasks: orig}
+	cfg := &config.Config{Title: "T", Tasks: orig}
 	m := NewWizardFromConfig("out.yaml", cfg)
 
 	if len(m.tasks) != 2 {
@@ -1115,7 +1084,7 @@ func TestNewWizardFromConfig_CopiesTasks(t *testing.T) {
 }
 
 func TestNewWizardFromConfig_StartsAtHub(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream}
+	cfg := &config.Config{Title: "T", Tasks: []config.Task{}}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	if m.step != wizStepEditHub {
 		t.Errorf("edit mode should start at wizStepEditHub, got %d", m.step)
@@ -1124,9 +1093,8 @@ func TestNewWizardFromConfig_StartsAtHub(t *testing.T) {
 
 func TestWizardEdit_HubViewMentionsEdit(t *testing.T) {
 	cfg := &config.Config{
-		Title:   "My App",
-		RunMode: config.RunModeStream,
-		Tasks:   []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream}},
+		Title: "My App",
+		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	v := m.View()
@@ -1139,7 +1107,7 @@ func TestWizardEdit_HubViewMentionsEdit(t *testing.T) {
 }
 
 func TestWizardEdit_TitlePreFilledAndConfirmable(t *testing.T) {
-	cfg := &config.Config{Title: "Original", RunMode: config.RunModeStream}
+	cfg := &config.Config{Title: "Original", Tasks: []config.Task{}}
 	m := NewWizardFromConfig("out.yaml", cfg)
 
 	// Hub → 'e' → Title step (inputBuf pre-filled with existing title)
@@ -1153,13 +1121,13 @@ func TestWizardEdit_TitlePreFilledAndConfirmable(t *testing.T) {
 	if m.cfgTitle != "Original" {
 		t.Errorf("cfgTitle after confirm: got %q, want Original", m.cfgTitle)
 	}
-	if m.step != wizStepRunMode {
-		t.Errorf("step after title: got %d, want wizStepRunMode", m.step)
+	if m.step != wizStepEditHub {
+		t.Errorf("step after title: got %d, want wizStepEditHub", m.step)
 	}
 }
 
 func TestWizardEdit_TitleCanBeReplaced(t *testing.T) {
-	cfg := &config.Config{Title: "Old", RunMode: config.RunModeStream}
+	cfg := &config.Config{Title: "Old", Tasks: []config.Task{}}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	m = hubEditSettings(t, m) // hub → 'e' → title step (pre-filled "Old")
 
@@ -1175,23 +1143,11 @@ func TestWizardEdit_TitleCanBeReplaced(t *testing.T) {
 	}
 }
 
-func TestWizardEdit_RunModePreselected(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeBackground}
-	m := NewWizardFromConfig("out.yaml", cfg)
-	m = hubEditSettings(t, m) // hub → 'e' → title step
-	m = pressEnter(t, m)      // confirm title → RunMode step (no UIMode step)
-
-	// optCursor should point at "background" (index 2)
-	if m.optCursor != 2 {
-		t.Errorf("optCursor on RunMode step: got %d, want 2 (background)", m.optCursor)
-	}
-}
-
 func TestWizardEdit_ExistingTasksCarriedToSummary(t *testing.T) {
 	existing := []config.Task{
-		{Name: "Build", Actions: []config.Action{{Command: "make build"}}, RunMode: config.RunModeStream},
+		{Name: "Build", Actions: []config.Action{{Command: "make build"}}},
 	}
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream, Tasks: existing}
+	cfg := &config.Config{Title: "T", Tasks: existing}
 	m := NewWizardFromConfig("out.yaml", cfg)
 
 	// From the hub, add a new task via 'a', then save via 's'.
@@ -1199,7 +1155,7 @@ func TestWizardEdit_ExistingTasksCarriedToSummary(t *testing.T) {
 	if m.step != wizStepCmdName {
 		t.Fatalf("expected wizStepCmdName after 'a', got %d", m.step)
 	}
-	m = addCommand(t, m, "NewCmd", "", "echo new", "", "", 0)
+	m = addCommand(t, m, "NewCmd", "", "echo new", "", "", false)
 
 	// After addCommand in edit mode, returnToHub=true so we land back on hub.
 	if m.step != wizStepEditHub {
@@ -1238,10 +1194,9 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 
 	// Write initial config.
 	initial := &config.Config{
-		Title:   "Initial",
-		RunMode: config.RunModeStream,
+		Title: "Initial",
 		Tasks: []config.Task{
-			{Name: "OldCmd", Actions: []config.Action{{Command: "echo old"}}, RunMode: config.RunModeStream},
+			{Name: "OldCmd", Actions: []config.Action{{Command: "echo old"}}},
 		},
 	}
 	if err := config.Write(tmp, initial); err != nil {
@@ -1256,8 +1211,7 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 		m = pressBackspace(t, m)
 	}
 	m = typeText(t, m, "Updated")
-	m = pressEnter(t, m) // confirm title → RunMode (no UIMode step)
-	m = pressEnter(t, m) // confirm RunMode → back to hub
+	m = pressEnter(t, m) // confirm title → back to hub
 
 	if m.step != wizStepEditHub {
 		t.Fatalf("expected wizStepEditHub after settings edit, got %d", m.step)
@@ -1265,7 +1219,7 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 
 	// Add a new task.
 	m = hubAddCommand(t, m)
-	m = addCommand(t, m, "Extra", "", "echo extra", "", "", 0)
+	m = addCommand(t, m, "Extra", "", "echo extra", "", "", false)
 	if m.step != wizStepEditHub {
 		t.Fatalf("expected wizStepEditHub after adding task, got %d", m.step)
 	}
@@ -1298,8 +1252,8 @@ func TestWizardEdit_SaveWritesUpdatedFile(t *testing.T) {
 // ── Edit hub tests ────────────────────────────────────────────────────────────
 
 func TestEditHub_InitialStep(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
-		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream}},
+	cfg := &config.Config{Title: "T",
+		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	if m.step != wizStepEditHub {
@@ -1308,12 +1262,12 @@ func TestEditHub_InitialStep(t *testing.T) {
 }
 
 func TestEditHub_ViewContainsSettingsSummary(t *testing.T) {
-	cfg := &config.Config{Title: "MyApp", RunMode: config.RunModeHandoff,
-		Tasks: []config.Task{{Name: "Build", Actions: []config.Action{{Command: "make build"}}, RunMode: config.RunModeStream}},
+	cfg := &config.Config{Title: "MyApp",
+		Tasks: []config.Task{{Name: "Build", Actions: []config.Action{{Command: "make build"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	v := m.View()
-	for _, want := range []string{"MyApp", "handoff", "Build"} {
+	for _, want := range []string{"MyApp", "Build"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("hub view missing %q:\n%s", want, v)
 		}
@@ -1321,8 +1275,8 @@ func TestEditHub_ViewContainsSettingsSummary(t *testing.T) {
 }
 
 func TestEditHub_ViewContainsActionMenu(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
-		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream}},
+	cfg := &config.Config{Title: "T",
+		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	v := m.View()
@@ -1334,10 +1288,10 @@ func TestEditHub_ViewContainsActionMenu(t *testing.T) {
 }
 
 func TestEditHub_DeleteMarksInitialisedFalse(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T",
 		Tasks: []config.Task{
-			{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream},
-			{Name: "B", Actions: []config.Action{{Command: "b"}}, RunMode: config.RunModeStream},
+			{Name: "A", Actions: []config.Action{{Command: "a"}}},
+			{Name: "B", Actions: []config.Action{{Command: "b"}}},
 		},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1349,10 +1303,10 @@ func TestEditHub_DeleteMarksInitialisedFalse(t *testing.T) {
 }
 
 func TestEditHub_SpaceTogglesDeleteMark(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T",
 		Tasks: []config.Task{
-			{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream},
-			{Name: "B", Actions: []config.Action{{Command: "b"}}, RunMode: config.RunModeStream},
+			{Name: "A", Actions: []config.Action{{Command: "a"}}},
+			{Name: "B", Actions: []config.Action{{Command: "b"}}},
 		},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1367,10 +1321,10 @@ func TestEditHub_SpaceTogglesDeleteMark(t *testing.T) {
 }
 
 func TestEditHub_DownMovesTaskCursor(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T",
 		Tasks: []config.Task{
-			{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream},
-			{Name: "B", Actions: []config.Action{{Command: "b"}}, RunMode: config.RunModeStream},
+			{Name: "A", Actions: []config.Action{{Command: "a"}}},
+			{Name: "B", Actions: []config.Action{{Command: "b"}}},
 		},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1388,10 +1342,10 @@ func TestEditHub_DownMovesTaskCursor(t *testing.T) {
 }
 
 func TestEditHub_DeleteMarkedRemovesTask(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T",
 		Tasks: []config.Task{
-			{Name: "Keep", Actions: []config.Action{{Command: "echo keep"}}, RunMode: config.RunModeStream},
-			{Name: "Gone", Actions: []config.Action{{Command: "echo gone"}}, RunMode: config.RunModeStream},
+			{Name: "Keep", Actions: []config.Action{{Command: "echo keep"}}},
+			{Name: "Gone", Actions: []config.Action{{Command: "echo gone"}}},
 		},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1410,9 +1364,9 @@ func TestEditHub_DeleteMarkedRemovesTask(t *testing.T) {
 }
 
 func TestEditHub_DeleteAllMarkedIsRejected(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T",
 		Tasks: []config.Task{
-			{Name: "Only", Actions: []config.Action{{Command: "echo only"}}, RunMode: config.RunModeStream},
+			{Name: "Only", Actions: []config.Action{{Command: "echo only"}}},
 		},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1427,9 +1381,9 @@ func TestEditHub_DeleteAllMarkedIsRejected(t *testing.T) {
 }
 
 func TestEditHub_DeleteNoneMarkedShowsError(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T",
 		Tasks: []config.Task{
-			{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream},
+			{Name: "A", Actions: []config.Action{{Command: "a"}}},
 		},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1440,25 +1394,24 @@ func TestEditHub_DeleteNoneMarkedShowsError(t *testing.T) {
 }
 
 func TestEditHub_EditSettingsReturnsToHub(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
-		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream}},
+	cfg := &config.Config{Title: "T",
+		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	m = hubEditSettings(t, m) // hub → 'e' → title
-	m = pressEnter(t, m)      // confirm title → RunMode (no UIMode step)
-	m = pressEnter(t, m)      // confirm RunMode → back to hub
+	m = pressEnter(t, m)      // confirm title → back to hub
 	if m.step != wizStepEditHub {
 		t.Errorf("after editing settings, should return to hub, got %d", m.step)
 	}
 }
 
 func TestEditHub_AddCommandReturnsToHub(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
-		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream}},
+	cfg := &config.Config{Title: "T",
+		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	m = hubAddCommand(t, m)
-	m = addCommand(t, m, "B", "", "echo b", "", "", 0)
+	m = addCommand(t, m, "B", "", "echo b", "", "", false)
 	if m.step != wizStepEditHub {
 		t.Errorf("after adding task, should return to hub, got %d", m.step)
 	}
@@ -1468,8 +1421,8 @@ func TestEditHub_AddCommandReturnsToHub(t *testing.T) {
 }
 
 func TestEditHub_SaveGoesToSummary(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
-		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream}},
+	cfg := &config.Config{Title: "T",
+		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	m = hubSave(t, m) // 's' → summary
@@ -1479,25 +1432,25 @@ func TestEditHub_SaveGoesToSummary(t *testing.T) {
 }
 
 func TestEditHub_DeleteMarksGrowAfterAddCommand(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
-		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream}},
+	cfg := &config.Config{Title: "T",
+		Tasks: []config.Task{{Name: "A", Actions: []config.Action{{Command: "a"}}}},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
 	if len(m.deleteMarks) != 1 {
 		t.Fatalf("initial deleteMarks len: got %d, want 1", len(m.deleteMarks))
 	}
 	m = hubAddCommand(t, m)
-	m = addCommand(t, m, "B", "", "echo b", "", "", 0)
+	m = addCommand(t, m, "B", "", "echo b", "", "", false)
 	if len(m.deleteMarks) != 2 {
 		t.Errorf("deleteMarks len after add: got %d, want 2", len(m.deleteMarks))
 	}
 }
 
 func TestEditHub_DeleteMarksResetAfterBulkDelete(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T",
 		Tasks: []config.Task{
-			{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream},
-			{Name: "B", Actions: []config.Action{{Command: "b"}}, RunMode: config.RunModeStream},
+			{Name: "A", Actions: []config.Action{{Command: "a"}}},
+			{Name: "B", Actions: []config.Action{{Command: "b"}}},
 		},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1512,10 +1465,10 @@ func TestEditHub_DeleteMarksResetAfterBulkDelete(t *testing.T) {
 }
 
 func TestEditHub_CursorClampsAfterDelete(t *testing.T) {
-	cfg := &config.Config{Title: "T", RunMode: config.RunModeStream,
+	cfg := &config.Config{Title: "T",
 		Tasks: []config.Task{
-			{Name: "A", Actions: []config.Action{{Command: "a"}}, RunMode: config.RunModeStream},
-			{Name: "B", Actions: []config.Action{{Command: "b"}}, RunMode: config.RunModeStream},
+			{Name: "A", Actions: []config.Action{{Command: "a"}}},
+			{Name: "B", Actions: []config.Action{{Command: "b"}}},
 		},
 	}
 	m := NewWizardFromConfig("out.yaml", cfg)
@@ -1530,11 +1483,11 @@ func TestEditHub_CursorClampsAfterDelete(t *testing.T) {
 func TestEditHub_SaveAndVerifyFile(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "nexus.yaml")
 	existing := &config.Config{
-		Title:   "Orig",
-		RunMode: config.RunModeStream,
+		Title: "Orig",
+
 		Tasks: []config.Task{
-			{Name: "Keep", Actions: []config.Action{{Command: "echo keep"}}, RunMode: config.RunModeStream},
-			{Name: "Drop", Actions: []config.Action{{Command: "echo drop"}}, RunMode: config.RunModeStream},
+			{Name: "Keep", Actions: []config.Action{{Command: "echo keep"}}},
+			{Name: "Drop", Actions: []config.Action{{Command: "echo drop"}}},
 		},
 	}
 	if err := config.Write(tmp, existing); err != nil {
@@ -1568,13 +1521,13 @@ func TestOptionIndex_FindsCorrectIndex(t *testing.T) {
 		v    string
 		want int
 	}{
-		{"stream", 0},
-		{"handoff", 1},
-		{"background", 2},
+		{"no", 0},      // no handoff is first
+		{"yes", 1},     // handoff is second
+		{"", 0},        // fallback to first
 		{"unknown", 0}, // fallback
 	}
 	for _, tc := range cases {
-		got := optionIndex(runModeOptions, tc.v)
+		got := optionIndex(handoffOptions, tc.v)
 		if got != tc.want {
 			t.Errorf("optionIndex(%q): got %d, want %d", tc.v, got, tc.want)
 		}

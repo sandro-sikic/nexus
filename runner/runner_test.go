@@ -23,7 +23,6 @@ func echoTask(text string) config.Task {
 	return config.Task{
 		Name:    "echo",
 		Actions: []config.Action{{Command: cmd, Background: false}},
-		RunMode: config.RunModeStream,
 	}
 }
 
@@ -38,7 +37,6 @@ func stderrTask() config.Task {
 	return config.Task{
 		Name:    "stderr",
 		Actions: []config.Action{{Command: cmd, Background: false}},
-		RunMode: config.RunModeStream,
 	}
 }
 
@@ -53,7 +51,6 @@ func multilineTask() config.Task {
 	return config.Task{
 		Name:    "multiline",
 		Actions: []config.Action{{Command: cmd, Background: false}},
-		RunMode: config.RunModeStream,
 	}
 }
 
@@ -429,7 +426,6 @@ func multiActionTask() config.Task {
 	return config.Task{
 		Name:    "multi",
 		Actions: []config.Action{{Command: step1}, {Command: step2}},
-		RunMode: config.RunModeStream,
 	}
 }
 
@@ -563,7 +559,6 @@ func TestWizard_MultiAction_CommitCommand(t *testing.T) {
 	task := config.Task{
 		Name:    "Setup",
 		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run dev"}},
-		RunMode: config.RunModeHandoff,
 	}
 	cmds := task.AllCommands()
 	if len(cmds) != 2 {
@@ -610,7 +605,6 @@ func TestHandoff_FailingCommandReturnsError(t *testing.T) {
 
 func TestHandoff_MultiAction_AllSucceed(t *testing.T) {
 	task := multiActionTask() // has Actions: []Action{{Command: "echo step-one"}, {Command: "echo step-two"}}
-	task.RunMode = config.RunModeHandoff
 	err := runner.Handoff(task)
 	if err != nil {
 		t.Errorf("Handoff multi-step should succeed, got: %v", err)
@@ -629,7 +623,6 @@ func TestHandoff_MultiAction_FailOnFirstAction_WrapsError(t *testing.T) {
 	task := config.Task{
 		Name:    "multi-fail",
 		Actions: []config.Action{{Command: step1}, {Command: step2}},
-		RunMode: config.RunModeHandoff,
 	}
 	err := runner.Handoff(task)
 	if err == nil {
@@ -680,7 +673,6 @@ func TestStream_MultiAction_FailOnFirstAction_SendsErrorLine(t *testing.T) {
 	task := config.Task{
 		Name:    "fail-multi",
 		Actions: []config.Action{{Command: step1}, {Command: step2}},
-		RunMode: config.RunModeStream,
 	}
 	lines := make(chan runner.LogLine, 64)
 	if err := runner.Stream(task, lines); err != nil {
@@ -741,7 +733,7 @@ func TestStream_LargeLineIsReceived(t *testing.T) {
 	// 256 KB line — well above the old 64 KB default.
 	const lineSize = 256 * 1024
 	lines := make(chan runner.LogLine, 4)
-	task := config.Task{Name: "large", Actions: []config.Action{{Command: largeLine(lineSize)}}, RunMode: config.RunModeStream}
+	task := config.Task{Name: "large", Actions: []config.Action{{Command: largeLine(lineSize)}}}
 	if err := runner.Stream(task, lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
@@ -781,7 +773,7 @@ func TestStream_LargeLine_ChannelClosedAfterExit(t *testing.T) {
 	// previously the scanner would stall and the channel would stay open.
 	const lineSize = 256 * 1024
 	lines := make(chan runner.LogLine, 4)
-	task := config.Task{Name: "large-close", Actions: []config.Action{{Command: largeLine(lineSize)}}, RunMode: config.RunModeStream}
+	task := config.Task{Name: "large-close", Actions: []config.Action{{Command: largeLine(lineSize)}}}
 	if err := runner.Stream(task, lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
@@ -801,7 +793,7 @@ func TestStream_LargeLine_ChannelClosedAfterExit(t *testing.T) {
 
 func TestRunBackground_LargeLineIsReceived(t *testing.T) {
 	const lineSize = 256 * 1024
-	task := config.Task{Name: "bg-large", Actions: []config.Action{{Command: largeLine(lineSize)}}, RunMode: config.RunModeBackground}
+	task := config.Task{Name: "bg-large", Actions: []config.Action{{Command: largeLine(lineSize)}}}
 	proc, err := runner.RunBackground(task)
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
@@ -871,7 +863,6 @@ func TestRunBackground_MultiAction_ErrorLineOnActionFailure(t *testing.T) {
 	task := config.Task{
 		Name:    "bg-fail",
 		Actions: []config.Action{{Command: step1}, {Command: step2}},
-		RunMode: config.RunModeBackground,
 	}
 	proc, err := runner.RunBackground(task)
 	if err != nil {

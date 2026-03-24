@@ -13,9 +13,9 @@ import (
 
 func fuzzyCfg(tasks ...config.Task) *config.Config {
 	return &config.Config{
-		Title:   "Fuzzy Test",
-		RunMode: config.RunModeStream,
-		Tasks:   tasks,
+		Title: "Fuzzy Test",
+
+		Tasks: tasks,
 	}
 }
 
@@ -184,7 +184,7 @@ func TestFuzzyModel_NoMatchShowsEmpty(t *testing.T) {
 }
 
 func TestFuzzyModel_MatchesOnDescription(t *testing.T) {
-	c := config.Task{Name: "Nexus", Description: "executes things", Actions: []config.Action{{Command: "run"}}, RunMode: config.RunModeStream}
+	c := config.Task{Name: "Nexus", Description: "executes things", Actions: []config.Action{{Command: "run"}}}
 	m := NewFuzzyModel(fuzzyCfg(c))
 	m, _ = m.Update(runesMsg("exec"))
 	if len(m.filtered) != 1 {
@@ -193,7 +193,7 @@ func TestFuzzyModel_MatchesOnDescription(t *testing.T) {
 }
 
 func TestFuzzyModel_MatchesOnCommand(t *testing.T) {
-	c := config.Task{Name: "Nexus", Description: "desc", Actions: []config.Action{{Command: "npm run dev"}}, RunMode: config.RunModeStream}
+	c := config.Task{Name: "Nexus", Description: "desc", Actions: []config.Action{{Command: "npm run dev"}}}
 	m := NewFuzzyModel(fuzzyCfg(c))
 	m, _ = m.Update(runesMsg("nrd"))
 	if len(m.filtered) != 1 {

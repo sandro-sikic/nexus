@@ -1,20 +1,24 @@
 # nexus.yaml — example configuration
 #
-# run_mode: stream | handoff | background
-#
-# Per-task run_mode overrides the top-level default.
+# Tasks execute with stream output inside the TUI by default.
+# To hand off the terminal to a command (e.g., for interactive programs),
+# set handoff: true on the LAST action only.
 #
 # Actions: use the "actions" field to define a list of commands to execute.
 # Each action can have:
 #   - command: the shell command to run (required)
 #   - background: true/false - whether to run in background (optional)
-# Actions execute sequentially. Execution stops on first failure.
-# Background actions continue running while foreground actions execute.
+#   - handoff: true/false - whether to hand off terminal (only valid for last action)
+#
+# Rules:
+#   - Actions execute sequentially
+#   - Only the LAST action can have handoff: true
+#   - An action cannot have both background: true and handoff: true
+#   - Background actions continue running while foreground actions execute
 #
 # group: optional label — tasks with the same group are shown together.
 
 title: "My Project Nexus"
-run_mode: stream      # default: stream output inside the TUI
 
 tasks:
   # ── Development ──────────────────────────────────────────
@@ -22,23 +26,23 @@ tasks:
     description: Start the development server with hot reload
     actions:
       - command: "npm run dev"
+        handoff: true  # hand off terminal; Ctrl+C works normally
     group: Development
-    run_mode: handoff   # hand off terminal; Ctrl+C works normally
 
   - name: Setup and Dev
     description: Install deps then start the dev server
     actions:
       - command: "npm install"
       - command: "npm run dev"
+        handoff: true
     group: Development
-    run_mode: handoff
 
   - name: Watch Tests
     description: Run tests in watch mode
     actions:
       - command: "npm run test:watch"
+        handoff: true
     group: Development
-    run_mode: stream
 
   - name: Type Check
     description: Run TypeScript type checker
@@ -57,8 +61,8 @@ tasks:
     description: Preview the production build locally
     actions:
       - command: "npm run preview"
+        handoff: true
     group: Build
-    run_mode: handoff
 
   # ── Quality ──────────────────────────────────────────────
   - name: Lint
@@ -86,17 +90,9 @@ tasks:
       - command: "rm -rf dist node_modules"
     group: Utilities
 
-  - name: Background Logger
-    description: Demo background process (pings localhost)
-    actions:
-      - command: "ping -n 10 127.0.0.1"
-    group: Utilities
-    run_mode: background
-
   # ── Mixed Foreground/Background ──────────────────────────
-  # Use the "actions" field with background: true to run some commands
-  # in the background while others run in the foreground.
-  # Background actions continue running while foreground actions execute.
+  # Use background: true to run commands in the background.
+  # Background actions continue while foreground actions execute.
 
   - name: Dev Server + Playwright
     description: Start dev server in background, then run playwright codegen
@@ -104,5 +100,13 @@ tasks:
       - command: "npm run dev"
         background: true
       - command: "npx playwright codegen"
+        handoff: true
     group: Development
-    run_mode: stream
+
+  # ── Background Process Demo ──────────────────────────────
+  - name: Background Logger
+    description: Demo background process (pings localhost)
+    actions:
+      - command: "ping -n 10 127.0.0.1"
+        background: true
+    group: Utilities

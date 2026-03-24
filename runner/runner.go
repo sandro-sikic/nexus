@@ -88,8 +88,15 @@ func Handoff(task config.Task) error {
 // Stream runs actions sequentially and sends output lines to the provided channel.
 // Background actions are started and continue while foreground actions execute.
 // The channel is closed when all actions complete or a foreground action fails.
+// If the last action has handoff=true, it is NOT executed (should be handled by HandoffLastAction).
 func Stream(task config.Task, lines chan LogLine) error {
-	if len(task.Actions) == 0 {
+	actions := task.Actions
+	// If last action has handoff, don't execute it here
+	if task.HasHandoff() && len(actions) > 0 {
+		actions = actions[:len(actions)-1]
+	}
+
+	if len(actions) == 0 {
 		close(lines)
 		return nil
 	}
@@ -100,18 +107,18 @@ func Stream(task config.Task, lines chan LogLine) error {
 		// Track background processes
 		var bgProcs []*BackgroundProc
 
-		for i, action := range task.Actions {
+		for i, action := range actions {
 			if action.Background {
 				// Start background action and continue immediately
 				lines <- LogLine{
-					Text:  fmt.Sprintf("[%d/%d] [BG] Starting: %s", i+1, len(task.Actions), action.Command),
+					Text:  fmt.Sprintf("[%d/%d] [BG] Starting: %s", i+1, len(actions), action.Command),
 					IsErr: false,
 				}
 
 				bp, err := runBackgroundAction(action.Command, task.Dir, lines)
 				if err != nil {
 					lines <- LogLine{
-						Text:  fmt.Sprintf("error: failed to start background action %d/%d: %v", i+1, len(task.Actions), err),
+						Text:  fmt.Sprintf("error: failed to start background action %d/%d: %v", i+1, len(actions), err),
 						IsErr: true,
 					}
 					return
@@ -119,16 +126,16 @@ func Stream(task config.Task, lines chan LogLine) error {
 				bgProcs = append(bgProcs, bp)
 			} else {
 				// Run foreground action (blocking)
-				if len(task.Actions) > 1 {
+				if len(actions) > 1 {
 					lines <- LogLine{
-						Text:  fmt.Sprintf("[%d/%d] %s", i+1, len(task.Actions), action.Command),
+						Text:  fmt.Sprintf("[%d/%d] %s", i+1, len(actions), action.Command),
 						IsErr: false,
 					}
 				}
 
 				if err := streamOne(buildCmdFromShell(action.Command, task.Dir), lines); err != nil {
 					lines <- LogLine{
-						Text:  fmt.Sprintf("error: action %d/%d %q: %v", i+1, len(task.Actions), action.Command, err),
+						Text:  fmt.Sprintf("error: action %d/%d %q: %v", i+1, len(actions), action.Command, err),
 						IsErr: true,
 					}
 					return
@@ -153,6 +160,24 @@ func Stream(task config.Task, lines chan LogLine) error {
 	}()
 
 	return nil
+}
+
+// HandoffLastAction runs the last action of the task in the raw terminal.
+// This should be called after Stream() when the last action has handoff=true.
+// Returns nil if no handoff action exists.
+func HandoffLastAction(task config.Task) error {
+	if !task.HasHandoff() || len(task.Actions) == 0 {
+		return nil
+	}
+
+	lastAction := task.Actions[len(task.Actions)-1]
+
+	// Run the last action in the foreground (raw terminal)
+	c := buildCmdFromShell(lastAction.Command, task.Dir)
+	c.Stdin = os.Stdin
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	return c.Run()
 }
 
 // streamOne runs a single exec.Cmd and pipes its stdout/stderr to lines.

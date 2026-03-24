@@ -12,7 +12,7 @@ import (
 // ── OutputModel construction ──────────────────────────────────────────────────
 
 func TestNewOutputModel_InitialState(t *testing.T) {
-	c := config.Task{Name: "Echo", Actions: []config.Action{{Command: "echo hi", Background: false}}, RunMode: config.RunModeStream}
+	c := config.Task{Name: "Echo", Actions: []config.Action{{Command: "echo hi", Background: false}}}
 	m := NewOutputModel(c)
 
 	if m.task.Name != "Echo" {
@@ -267,7 +267,7 @@ func TestOutputModel_ViewRendersErrorLines(t *testing.T) {
 // ── BackgroundModel construction ──────────────────────────────────────────────
 
 func TestNewBackgroundModel_InitialState(t *testing.T) {
-	c := config.Task{Name: "BG", Actions: []config.Action{{Command: "echo bg"}}, RunMode: config.RunModeBackground}
+	c := config.Task{Name: "BG", Actions: []config.Action{{Command: "echo bg", Background: true}}}
 	m := BackgroundModel{
 		task:   c,
 		width:  80,
@@ -383,7 +383,6 @@ func TestOutputModel_ViewMultiActionShowsAllActions(t *testing.T) {
 	c := config.Task{
 		Name:    "MultiActionTask",
 		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run build"}},
-		RunMode: config.RunModeStream,
 	}
 	m := NewOutputModel(c)
 	v := m.View()
