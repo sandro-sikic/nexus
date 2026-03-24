@@ -11,20 +11,20 @@ import (
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func appCfg(runMode config.RunMode, cmds ...config.Command) *config.Config {
+func appCfg(runMode config.RunMode, cmds ...config.Task) *config.Config {
 	return &config.Config{
-		Title:    "App Test",
-		RunMode:  runMode,
-		Commands: cmds,
+		Title:   "App Test",
+		RunMode: runMode,
+		Tasks:   cmds,
 	}
 }
 
-func streamCmd(name, command string) config.Command {
-	return config.Command{Name: name, Command: command, RunMode: config.RunModeStream}
+func streamCmd(name, command string) config.Task {
+	return config.Task{Name: name, Actions: []config.Action{{Command: command}}, RunMode: config.RunModeStream}
 }
 
-func handoffCmd(name, command string) config.Command {
-	return config.Command{Name: name, Command: command, RunMode: config.RunModeHandoff}
+func handoffCmd(name, command string) config.Task {
+	return config.Task{Name: name, Actions: []config.Action{{Command: command}}, RunMode: config.RunModeHandoff}
 }
 
 // updateApp sends a message and returns the concrete AppModel.
@@ -62,7 +62,7 @@ func TestNewApp_FuzzyMode(t *testing.T) {
 }
 
 func TestNewApp_GroupMode(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, gcmd("A", "a", "G"))
+	cfg := appCfg(config.RunModeStream, gtask("A", []string{"a"}, "G"))
 	m := NewApp(cfg)
 	if len(m.fuzzy.entries) == 0 {
 		t.Error("fuzzy group entries not populated")
@@ -137,7 +137,7 @@ func TestAppModel_BackFromOutputClearsSelection(t *testing.T) {
 	m := NewApp(cfg)
 	m.state = stateOutput
 	// Manually set a selection to confirm it's cleared
-	sel := cfg.Commands[0]
+	sel := cfg.Tasks[0]
 	m.fuzzy.selected = &sel
 	m = updateApp(m, keyMsg("q"))
 	if m.fuzzy.selected != nil {
@@ -174,8 +174,8 @@ func TestAppModel_OutputStream_CmdNameStored(t *testing.T) {
 	cfg := appCfg(config.RunModeStream, streamCmd("MyEcho", "echo x"))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.output.cmd.Name != "MyEcho" {
-		t.Errorf("output.cmd.Name: got %q, want MyEcho", m.output.cmd.Name)
+	if m.output.task.Name != "MyEcho" {
+		t.Errorf("output.task.Name: got %q, want MyEcho", m.output.task.Name)
 	}
 }
 
@@ -216,7 +216,7 @@ func TestAppModel_FuzzyModeTypingFilters(t *testing.T) {
 // ── Group mode integration ────────────────────────────────────────────────────
 
 func TestAppModel_GroupModeSelectTransitionsToOutput(t *testing.T) {
-	cfg := appCfg(config.RunModeStream, gcmd("Deploy", "kubectl apply", "Ops"))
+	cfg := appCfg(config.RunModeStream, gtask("Deploy", []string{"kubectl apply"}, "Ops"))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.state != stateOutput {
@@ -279,7 +279,7 @@ func TestAppModel_ViewDelegatesOutputInOutputState(t *testing.T) {
 	cfg := appCfg(config.RunModeStream)
 	m := NewApp(cfg)
 	m.state = stateOutput
-	m.output = NewOutputModel(config.Command{Name: "OutputCmdX", Command: "x"})
+	m.output = NewOutputModel(config.Task{Name: "OutputCmdX", Actions: []config.Action{{Command: "x"}}, RunMode: config.RunModeStream})
 	v := m.View()
 	if !strings.Contains(v, "OutputCmdX") {
 		t.Errorf("output view should contain cmd name:\n%s", v)
@@ -290,7 +290,7 @@ func TestAppModel_ViewDelegatesBGInBGState(t *testing.T) {
 	cfg := appCfg(config.RunModeStream)
 	m := NewApp(cfg)
 	m.state = stateBG
-	m.bg = BackgroundModel{cmd: config.Command{Name: "BGTaskX", Command: "x"}, height: 24}
+	m.bg = BackgroundModel{task: config.Task{Name: "BGTaskX", Actions: []config.Action{{Command: "x"}}, RunMode: config.RunModeBackground}, height: 24}
 	v := m.View()
 	if !strings.Contains(v, "BGTaskX") {
 		t.Errorf("bg view should contain cmd name:\n%s", v)
@@ -309,12 +309,16 @@ func TestAppModel_SelectedCmdNilByDefault(t *testing.T) {
 
 // ── Background launch ─────────────────────────────────────────────────────────
 
-func bgCmd(name, command string) config.Command {
-	return config.Command{Name: name, Command: command, RunMode: config.RunModeBackground}
+func bgTask(name string, commands []string) config.Task {
+	actions := make([]config.Action, len(commands))
+	for i, cmd := range commands {
+		actions[i] = config.Action{Command: cmd}
+	}
+	return config.Task{Name: name, Actions: actions, RunMode: config.RunModeBackground}
 }
 
 func TestAppModel_EnterOnBackgroundCmdTransitionsToBG(t *testing.T) {
-	cfg := appCfg(config.RunModeBackground, bgCmd("BgTask", "echo bg"))
+	cfg := appCfg(config.RunModeBackground, bgTask("BgTask", []string{"echo bg"}))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.state != stateBG {
@@ -323,19 +327,19 @@ func TestAppModel_EnterOnBackgroundCmdTransitionsToBG(t *testing.T) {
 }
 
 func TestAppModel_BackgroundLaunch_CmdNameStored(t *testing.T) {
-	cfg := appCfg(config.RunModeBackground, bgCmd("MyBGTask", "echo hi"))
+	cfg := appCfg(config.RunModeBackground, bgTask("MyBGTask", []string{"echo hi"}))
 	m := NewApp(cfg)
 	m = updateApp(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.bg.cmd.Name != "MyBGTask" {
-		t.Errorf("bg.cmd.Name: got %q, want MyBGTask", m.bg.cmd.Name)
+	if m.bg.task.Name != "MyBGTask" {
+		t.Errorf("bg.task.Name: got %q, want MyBGTask", m.bg.task.Name)
 	}
 }
 
 func TestAppModel_BackgroundLaunch_ErrorPath(t *testing.T) {
 	// Launching a background command with invalid dir should store error.
-	c := config.Command{
+	c := config.Task{
 		Name:    "BadDir",
-		Command: "echo hi",
+		Actions: []config.Action{{Command: "echo hi"}},
 		Dir:     "/this/path/does/not/exist/xyz",
 		RunMode: config.RunModeBackground,
 	}
@@ -358,7 +362,7 @@ func TestAppModel_UpdateBGDelegatesToBGModel(t *testing.T) {
 	cfg := appCfg(config.RunModeStream, streamCmd("A", "a"))
 	m := NewApp(cfg)
 	m.state = stateBG
-	m.bg = BackgroundModel{cmd: config.Command{Name: "BGX"}, height: 24}
+	m.bg = BackgroundModel{task: config.Task{Name: "BGX", Actions: []config.Action{{Command: "x"}}, RunMode: config.RunModeBackground}, height: 24}
 	// Send a window size; should be handled by bg model
 	m = updateApp(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	if m.bg.width != 100 || m.bg.height != 30 {
@@ -402,13 +406,13 @@ func TestAppModel_LaunchFromFuzzyGroupView(t *testing.T) {
 func TestAppModel_HandoffMsg_SetsHandoffCmd(t *testing.T) {
 	cfg := appCfg(config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
 	m := NewApp(cfg)
-	sel := cfg.Commands[0]
-	m = updateApp(m, handoffMsg{cmd: sel})
-	if m.handoffCmd == nil {
+	sel := cfg.Tasks[0]
+	m = updateApp(m, handoffMsg{task: sel})
+	if m.handoffTask == nil {
 		t.Fatal("handoffMsg should set handoffCmd; got nil — handoff would have been silently dropped")
 	}
-	if m.handoffCmd.Name != "Dev" {
-		t.Errorf("handoffCmd.Name: got %q, want Dev", m.handoffCmd.Name)
+	if m.handoffTask.Name != "Dev" {
+		t.Errorf("handoffCmd.Name: got %q, want Dev", m.handoffTask.Name)
 	}
 }
 
@@ -416,11 +420,11 @@ func TestAppModel_HandoffMsg_SetsHandoffCmd(t *testing.T) {
 func TestAppModel_HandoffMsg_SetsQuitting(t *testing.T) {
 	cfg := appCfg(config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
 	m := NewApp(cfg)
-	sel := cfg.Commands[0]
+	sel := cfg.Tasks[0]
 
 	// The tea.Quit cmd itself won't run here, but quitting is set through the
 	// normal enter-key path before the handoffMsg is dispatched.
-	m = updateApp(m, handoffMsg{cmd: sel})
+	m = updateApp(m, handoffMsg{task: sel})
 	// After handling handoffMsg, the model should be in a quitting state.
 	// quitting may already be true from the enter-key launch path; we just
 	// verify the model is not in stateOutput or stateBG.
@@ -432,20 +436,20 @@ func TestAppModel_HandoffMsg_SetsQuitting(t *testing.T) {
 // TestAppModel_HandoffMsg_CommandNamePreserved verifies multi-step handoff commands
 // are preserved intact through the message round-trip.
 func TestAppModel_HandoffMsg_CommandNamePreserved(t *testing.T) {
-	multiStep := config.Command{
-		Name:     "Setup",
-		Commands: []string{"npm install", "npm run dev"},
-		RunMode:  config.RunModeHandoff,
+	multiStep := config.Task{
+		Name:    "Setup",
+		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run dev"}},
+		RunMode: config.RunModeHandoff,
 	}
 	cfg := appCfg(config.RunModeHandoff, multiStep)
 	m := NewApp(cfg)
-	m = updateApp(m, handoffMsg{cmd: multiStep})
-	if m.handoffCmd == nil {
+	m = updateApp(m, handoffMsg{task: multiStep})
+	if m.handoffTask == nil {
 		t.Fatal("handoffCmd should not be nil for multi-step handoff")
 	}
-	steps := m.handoffCmd.AllSteps()
+	steps := m.handoffTask.AllCommands()
 	if len(steps) != 2 {
-		t.Fatalf("handoffCmd.AllSteps(): got %d steps, want 2", len(steps))
+		t.Fatalf("handoffCmd.AllCommands(): got %d steps, want 2", len(steps))
 	}
 	if steps[0] != "npm install" || steps[1] != "npm run dev" {
 		t.Errorf("handoffCmd steps: got %v", steps)
@@ -456,7 +460,7 @@ func TestAppModel_HandoffMsg_CommandNamePreserved(t *testing.T) {
 func TestAppModel_HandoffMsg_NilByDefaultBeforeLaunch(t *testing.T) {
 	cfg := appCfg(config.RunModeHandoff, handoffCmd("Dev", "echo dev"))
 	m := NewApp(cfg)
-	if m.handoffCmd != nil {
+	if m.handoffTask != nil {
 		t.Error("handoffCmd should be nil before any command is selected")
 	}
 }
@@ -477,10 +481,10 @@ func TestAppModel_EnterOnHandoffCmd_HandoffCmdSetAfterMsg(t *testing.T) {
 
 	// At this point quitting=true but handoffCmd is still nil — the message
 	// hasn't been dispatched yet. Simulate Bubble Tea delivering handoffMsg.
-	sel := cfg.Commands[0]
-	m = updateApp(m, handoffMsg{cmd: sel})
+	sel := cfg.Tasks[0]
+	m = updateApp(m, handoffMsg{task: sel})
 
-	if m.handoffCmd == nil {
+	if m.handoffTask == nil {
 		t.Fatal("after enter + handoffMsg: handoffCmd is nil — HandleHandoff would never be called")
 	}
 }
@@ -488,7 +492,7 @@ func TestAppModel_EnterOnHandoffCmd_HandoffCmdSetAfterMsg(t *testing.T) {
 // ── HandleHandoff ─────────────────────────────────────────────────────────────
 
 func TestHandleHandoff_SuccessfulCommandReturnsNil(t *testing.T) {
-	c := config.Command{Name: "Echo", Command: "echo handlehandoff-ok", RunMode: config.RunModeHandoff}
+	c := config.Task{Name: "Echo", Actions: []config.Action{{Command: "echo handlehandoff-ok"}}, RunMode: config.RunModeHandoff}
 	err := HandleHandoff(c)
 	if err != nil {
 		t.Errorf("HandleHandoff should return nil for successful command, got: %v", err)
@@ -496,7 +500,7 @@ func TestHandleHandoff_SuccessfulCommandReturnsNil(t *testing.T) {
 }
 
 func TestHandleHandoff_FailingCommandReturnsError(t *testing.T) {
-	c := config.Command{Name: "Fail", Command: "exit 1", RunMode: config.RunModeHandoff}
+	c := config.Task{Name: "Fail", Actions: []config.Action{{Command: "exit 1"}}, RunMode: config.RunModeHandoff}
 	err := HandleHandoff(c)
 	if err == nil {
 		t.Error("HandleHandoff should return error when command exits non-zero")
@@ -504,7 +508,7 @@ func TestHandleHandoff_FailingCommandReturnsError(t *testing.T) {
 }
 
 func TestHandleHandoff_EmptyCommandReturnsNil(t *testing.T) {
-	c := config.Command{Name: "Empty", Command: "", RunMode: config.RunModeHandoff}
+	c := config.Task{Name: "Empty", Actions: []config.Action{{Command: ""}}, RunMode: config.RunModeHandoff}
 	err := HandleHandoff(c)
 	if err != nil {
 		t.Errorf("HandleHandoff with empty command should return nil, got: %v", err)
@@ -515,19 +519,19 @@ func TestHandleHandoff_EmptyCommandReturnsNil(t *testing.T) {
 
 // matchCfg builds a config suitable for RunFirstMatch tests. UIMode is
 // irrelevant for RunFirstMatch (it never starts the TUI), so we just use List.
-func matchCfg(cmds ...config.Command) *config.Config {
+func matchCfg(tasks ...config.Task) *config.Config {
 	return &config.Config{
-		Title:    "Match Test",
-		RunMode:  config.RunModeHandoff,
-		Commands: cmds,
+		Title:   "Match Test",
+		RunMode: config.RunModeHandoff,
+		Tasks:   tasks,
 	}
 }
 
-func echoCmd(name, description, shell string) config.Command {
-	return config.Command{
+func echoTask(name, description, shell string) config.Task {
+	return config.Task{
 		Name:        name,
 		Description: description,
-		Command:     shell,
+		Actions:     []config.Action{{Command: shell}},
 		RunMode:     config.RunModeHandoff,
 	}
 }
@@ -535,7 +539,7 @@ func echoCmd(name, description, shell string) config.Command {
 // TestRunFirstMatch_ExactNameMatch verifies that a query matching a command
 // name exactly causes that command to be executed.
 func TestRunFirstMatch_ExactNameMatch(t *testing.T) {
-	cfg := matchCfg(echoCmd("build", "", "echo build-ok"))
+	cfg := matchCfg(echoTask("build", "", "echo build-ok"))
 	if err := RunFirstMatch(cfg, "build"); err != nil {
 		t.Errorf("exact name match should succeed, got: %v", err)
 	}
@@ -544,7 +548,7 @@ func TestRunFirstMatch_ExactNameMatch(t *testing.T) {
 // TestRunFirstMatch_SubsequenceNameMatch verifies that a fuzzy subsequence
 // query matches a command name (same algorithm as the FuzzyModel).
 func TestRunFirstMatch_SubsequenceNameMatch(t *testing.T) {
-	cfg := matchCfg(echoCmd("build production", "", "echo subseq-ok"))
+	cfg := matchCfg(echoTask("build production", "", "echo subseq-ok"))
 	if err := RunFirstMatch(cfg, "bldprd"); err != nil {
 		t.Errorf("subsequence name match should succeed, got: %v", err)
 	}
@@ -552,7 +556,7 @@ func TestRunFirstMatch_SubsequenceNameMatch(t *testing.T) {
 
 // TestRunFirstMatch_CaseInsensitive verifies that matching is case-insensitive.
 func TestRunFirstMatch_CaseInsensitive(t *testing.T) {
-	cfg := matchCfg(echoCmd("Deploy", "", "echo deploy-ok"))
+	cfg := matchCfg(echoTask("Deploy", "", "echo deploy-ok"))
 	if err := RunFirstMatch(cfg, "DEPLOY"); err != nil {
 		t.Errorf("case-insensitive match should succeed, got: %v", err)
 	}
@@ -561,7 +565,7 @@ func TestRunFirstMatch_CaseInsensitive(t *testing.T) {
 // TestRunFirstMatch_MatchOnDescription verifies that a query matching the
 // description field (not the name) still selects the command.
 func TestRunFirstMatch_MatchOnDescription(t *testing.T) {
-	cfg := matchCfg(echoCmd("x", "runs all integration tests", "echo desc-ok"))
+	cfg := matchCfg(echoTask("x", "runs all integration tests", "echo desc-ok"))
 	if err := RunFirstMatch(cfg, "intgr"); err != nil {
 		t.Errorf("description match should succeed, got: %v", err)
 	}
@@ -571,7 +575,7 @@ func TestRunFirstMatch_MatchOnDescription(t *testing.T) {
 // shell command string selects the command.
 func TestRunFirstMatch_MatchOnCommandStep(t *testing.T) {
 	// "echo node-run-dist" contains the subsequence "nrd": [n]ode-[r]un-[d]ist.
-	cfg := matchCfg(echoCmd("x", "", "echo node-run-dist"))
+	cfg := matchCfg(echoTask("x", "", "echo node-run-dist"))
 	if err := RunFirstMatch(cfg, "nrd"); err != nil {
 		t.Errorf("command step match should succeed, got: %v", err)
 	}
@@ -579,7 +583,7 @@ func TestRunFirstMatch_MatchOnCommandStep(t *testing.T) {
 
 // TestRunFirstMatch_NoMatch verifies that an unmatched query returns an error.
 func TestRunFirstMatch_NoMatch(t *testing.T) {
-	cfg := matchCfg(echoCmd("build", "desc", "echo hi"))
+	cfg := matchCfg(echoTask("build", "desc", "echo hi"))
 	err := RunFirstMatch(cfg, "zzzzz")
 	if err == nil {
 		t.Error("expected error for unmatched query, got nil")
@@ -589,7 +593,7 @@ func TestRunFirstMatch_NoMatch(t *testing.T) {
 // TestRunFirstMatch_NoMatchErrorContainsQuery verifies the error message
 // includes the original query so the user knows what was attempted.
 func TestRunFirstMatch_NoMatchErrorContainsQuery(t *testing.T) {
-	cfg := matchCfg(echoCmd("build", "", "echo hi"))
+	cfg := matchCfg(echoTask("build", "", "echo hi"))
 	err := RunFirstMatch(cfg, "xyzzy")
 	if err == nil {
 		t.Fatal("expected error")
@@ -611,8 +615,8 @@ func TestRunFirstMatch_EmptyCommandList(t *testing.T) {
 // commands match, the first one in config order is executed, not a later one.
 // We detect this by using commands with distinct exit behaviors.
 func TestRunFirstMatch_RunsFirstMatchNotSecond(t *testing.T) {
-	first := config.Command{Name: "alpha", Command: "echo first-ok", RunMode: config.RunModeHandoff}
-	second := config.Command{Name: "alpha-two", Command: "exit 1", RunMode: config.RunModeHandoff}
+	first := config.Task{Name: "alpha", Actions: []config.Action{{Command: "echo first-ok"}}, RunMode: config.RunModeHandoff}
+	second := config.Task{Name: "alpha-two", Actions: []config.Action{{Command: "exit 1"}}, RunMode: config.RunModeHandoff}
 	cfg := matchCfg(first, second)
 	// "alpha" matches both "alpha" and "alpha-two"; first should win (no error).
 	if err := RunFirstMatch(cfg, "alpha"); err != nil {
@@ -623,7 +627,7 @@ func TestRunFirstMatch_RunsFirstMatchNotSecond(t *testing.T) {
 // TestRunFirstMatch_FailingCommandPropagatesError verifies that if the matched
 // command exits non-zero, the error is returned to the caller.
 func TestRunFirstMatch_FailingCommandPropagatesError(t *testing.T) {
-	cfg := matchCfg(echoCmd("fail", "", "exit 1"))
+	cfg := matchCfg(echoTask("fail", "", "exit 1"))
 	err := RunFirstMatch(cfg, "fail")
 	if err == nil {
 		t.Error("expected error from failing command, got nil")
@@ -633,10 +637,10 @@ func TestRunFirstMatch_FailingCommandPropagatesError(t *testing.T) {
 // TestRunFirstMatch_MultiStepCommand verifies that a multi-step command
 // (Commands slice) is executed correctly.
 func TestRunFirstMatch_MultiStepCommand(t *testing.T) {
-	c := config.Command{
-		Name:     "setup",
-		Commands: []string{"echo step-one", "echo step-two"},
-		RunMode:  config.RunModeHandoff,
+	c := config.Task{
+		Name:    "setup",
+		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo step-two"}},
+		RunMode: config.RunModeHandoff,
 	}
 	cfg := matchCfg(c)
 	if err := RunFirstMatch(cfg, "setup"); err != nil {
@@ -649,10 +653,10 @@ func TestRunFirstMatch_MultiStepCommand(t *testing.T) {
 func TestRunFirstMatch_MatchOnSecondStep(t *testing.T) {
 	// The second step "echo node-run-build" contains subsequence "nrb":
 	// [n]ode-[r]un-[b]uild.
-	c := config.Command{
-		Name:     "pipeline",
-		Commands: []string{"echo step-one", "echo node-run-build"},
-		RunMode:  config.RunModeHandoff,
+	c := config.Task{
+		Name:    "pipeline",
+		Actions: []config.Action{{Command: "echo step-one"}, {Command: "echo node-run-build"}},
+		RunMode: config.RunModeHandoff,
 	}
 	cfg := matchCfg(c)
 	if err := RunFirstMatch(cfg, "nrb"); err != nil {
@@ -664,8 +668,8 @@ func TestRunFirstMatch_MatchOnSecondStep(t *testing.T) {
 // the first command (consistent with how fuzzyMatch treats empty queries).
 func TestRunFirstMatch_EmptyQueryMatchesFirst(t *testing.T) {
 	cfg := matchCfg(
-		echoCmd("first", "", "echo first"),
-		echoCmd("second", "", "echo second"),
+		echoTask("first", "", "echo first"),
+		echoTask("second", "", "echo second"),
 	)
 	if err := RunFirstMatch(cfg, ""); err != nil {
 		t.Errorf("empty query should match first command, got: %v", err)

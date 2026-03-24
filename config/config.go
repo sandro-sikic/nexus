@@ -11,7 +11,7 @@ import (
 // ErrNotFound is returned by Load when the config file does not exist.
 var ErrNotFound = errors.New("config file not found")
 
-// RunMode controls how a selected command is executed.
+// RunMode controls how a selected action is executed.
 type RunMode string
 
 const (
@@ -20,71 +20,46 @@ const (
 	RunModeBackground RunMode = "background"
 )
 
-// Step represents a single command step with optional background execution.
-type Step struct {
+// Action represents a single executable shell command with optional background execution.
+type Action struct {
 	Command    string `yaml:"command"`
-	Background bool   `yaml:"background,omitempty"` // run this step in background
+	Background bool   `yaml:"background,omitempty"` // run this action in background
 }
 
-// Command represents a single runnable entry.
-type Command struct {
+// Task represents a named task with multiple actions to execute.
+type Task struct {
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
-	Command     string   `yaml:"command"`            // single shell command
-	Commands    []string `yaml:"commands,omitempty"` // multiple shell commands run sequentially (legacy)
-	Steps       []Step   `yaml:"steps,omitempty"`    // multiple steps with background support
-	Dir         string   `yaml:"dir"`                // working directory (optional)
-	RunMode     RunMode  `yaml:"run_mode"`           // overrides top-level default
-	Group       string   `yaml:"group"`              // optional group label for display grouping
+	Actions     []Action `yaml:"actions"`  // list of actions to execute sequentially
+	Dir         string   `yaml:"dir"`      // working directory (optional)
+	RunMode     RunMode  `yaml:"run_mode"` // overrides top-level default
+	Group       string   `yaml:"group"`    // optional group label for display grouping
 }
 
-// AllSteps returns the ordered list of shell commands to run.
-// If Steps is set, commands are extracted from it. If Commands is set, it is used.
-// Otherwise Command is returned as a single-item slice.
-func (c Command) AllSteps() []string {
-	if len(c.Steps) > 0 {
-		cmds := make([]string, len(c.Steps))
-		for i, step := range c.Steps {
-			cmds[i] = step.Command
-		}
-		return cmds
+// AllCommands returns all shell commands as strings for display purposes.
+func (t Task) AllCommands() []string {
+	cmds := make([]string, len(t.Actions))
+	for i, a := range t.Actions {
+		cmds[i] = a.Command
 	}
-	if len(c.Commands) > 0 {
-		return c.Commands
-	}
-	if c.Command != "" {
-		return []string{c.Command}
-	}
-	return nil
+	return cmds
 }
 
-// HasBackgroundSteps returns true if any step is marked as background.
-func (c Command) HasBackgroundSteps() bool {
-	for _, step := range c.Steps {
-		if step.Background {
+// HasBackgroundActions returns true if any action is marked as background.
+func (t Task) HasBackgroundActions() bool {
+	for _, a := range t.Actions {
+		if a.Background {
 			return true
 		}
 	}
 	return false
 }
 
-// GetStep returns the Step at the given index if using Steps field, otherwise returns a Step with the command.
-func (c Command) GetStep(index int) Step {
-	if len(c.Steps) > 0 && index < len(c.Steps) {
-		return c.Steps[index]
-	}
-	cmds := c.AllSteps()
-	if index < len(cmds) {
-		return Step{Command: cmds[index]}
-	}
-	return Step{}
-}
-
 // Config is the root structure of nexus.yaml.
 type Config struct {
-	Title    string    `yaml:"title"`
-	RunMode  RunMode   `yaml:"run_mode"` // default run mode
-	Commands []Command `yaml:"commands"`
+	Title   string  `yaml:"title"`
+	RunMode RunMode `yaml:"run_mode"` // default run mode
+	Tasks   []Task  `yaml:"tasks"`
 }
 
 // Write serialises cfg to a YAML file at path, creating it if necessary.
@@ -122,10 +97,10 @@ func Load(path string) (*Config, error) {
 		cfg.Title = "Nexus"
 	}
 
-	// Per-command defaults
-	for i := range cfg.Commands {
-		if cfg.Commands[i].RunMode == "" {
-			cfg.Commands[i].RunMode = cfg.RunMode
+	// Per-task defaults
+	for i := range cfg.Tasks {
+		if cfg.Tasks[i].RunMode == "" {
+			cfg.Tasks[i].RunMode = cfg.RunMode
 		}
 	}
 

@@ -30,9 +30,9 @@ type AppModel struct {
 	output OutputModel
 	bg     BackgroundModel
 
-	quitting   bool
-	handoffCmd *config.Command // set when a handoff is pending
-	err        string
+	quitting    bool
+	handoffTask *config.Task // set when a handoff is pending
+	err         string
 }
 
 func NewApp(cfg *config.Config) AppModel {
@@ -73,9 +73,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Handle handoff message: store the command and quit the TUI.
+	// Handle handoff message: store the task and quit the TUI.
 	if hm, ok := msg.(handoffMsg); ok {
-		m.handoffCmd = &hm.cmd
+		m.handoffTask = &hm.task
 		return m, tea.Quit
 	}
 
@@ -101,14 +101,14 @@ func (m AppModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m AppModel) launch(sel config.Command) (tea.Model, tea.Cmd) {
+func (m AppModel) launch(sel config.Task) (tea.Model, tea.Cmd) {
 	switch sel.RunMode {
 	case config.RunModeHandoff:
 		// For handoff we need to quit the TUI first, then exec
 		m.quitting = true
 		return m, tea.Sequence(
 			tea.ExitAltScreen,
-			func() tea.Msg { return handoffMsg{cmd: sel} },
+			func() tea.Msg { return handoffMsg{task: sel} },
 		)
 
 	case config.RunModeStream:
@@ -129,7 +129,7 @@ func (m AppModel) launch(sel config.Command) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-type handoffMsg struct{ cmd config.Command }
+type handoffMsg struct{ task config.Task }
 
 func (m AppModel) updateOutput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
@@ -161,24 +161,24 @@ func (m AppModel) View() string {
 	return m.fuzzy.View()
 }
 
-// RunFirstMatch fuzzy-matches query against all commands and immediately
+// RunFirstMatch fuzzy-matches query against all tasks and immediately
 // executes the first hit, bypassing the TUI entirely.
 func RunFirstMatch(cfg *config.Config, query string) error {
-	for _, cmd := range cfg.Commands {
-		matched := fuzzyMatch(query, cmd.Name) || fuzzyMatch(query, cmd.Description)
+	for _, task := range cfg.Tasks {
+		matched := fuzzyMatch(query, task.Name) || fuzzyMatch(query, task.Description)
 		if !matched {
-			for _, step := range cmd.AllSteps() {
-				if fuzzyMatch(query, step) {
+			for _, cmd := range task.AllCommands() {
+				if fuzzyMatch(query, cmd) {
 					matched = true
 					break
 				}
 			}
 		}
 		if matched {
-			return HandleHandoff(cmd)
+			return HandleHandoff(task)
 		}
 	}
-	return fmt.Errorf("no command matched %q", query)
+	return fmt.Errorf("no task matched %q", query)
 }
 
 // Run starts the TUI and handles any post-TUI handoff.
@@ -192,15 +192,18 @@ func Run(cfg *config.Config, cfgPath string) error {
 	}
 
 	// If a handoff was requested, execute it now that the TUI has exited.
-	if final, ok := finalModel.(AppModel); ok && final.handoffCmd != nil {
-		return HandleHandoff(*final.handoffCmd)
+	if final, ok := finalModel.(AppModel); ok && final.handoffTask != nil {
+		return HandleHandoff(*final.handoffTask)
 	}
 
 	return nil
 }
 
-// handleHandoff is called outside the TUI after it exits for handoff mode.
-func HandleHandoff(cmd config.Command) error {
-	fmt.Fprintf(os.Stderr, "Running: %s\n$ %s\n\n", cmd.Name, cmd.Command)
-	return runner.Handoff(cmd)
+// HandleHandoff is called outside the TUI after it exits for handoff mode.
+func HandleHandoff(task config.Task) error {
+	fmt.Fprintf(os.Stderr, "Running: %s\n", task.Name)
+	if len(task.Actions) > 0 {
+		fmt.Fprintf(os.Stderr, "$ %s\n\n", task.Actions[0].Command)
+	}
+	return runner.Handoff(task)
 }

@@ -12,60 +12,60 @@ import (
 	"nexus/runner"
 )
 
-// echoCmd returns a config.Command that simply prints the given text to stdout.
-func echoCmd(text string) config.Command {
+// echoTask returns a config.Task that simply prints the given text to stdout.
+func echoTask(text string) config.Task {
 	var cmd string
 	if runtime.GOOS == "windows" {
 		cmd = "echo " + text
 	} else {
 		cmd = "echo " + text
 	}
-	return config.Command{
+	return config.Task{
 		Name:    "echo",
-		Command: cmd,
+		Actions: []config.Action{{Command: cmd, Background: false}},
 		RunMode: config.RunModeStream,
 	}
 }
 
-// stderrCmd returns a command that writes to stderr.
-func stderrCmd() config.Command {
+// stderrTask returns a task that writes to stderr.
+func stderrTask() config.Task {
 	var cmd string
 	if runtime.GOOS == "windows" {
 		cmd = "echo stderr-line 1>&2"
 	} else {
 		cmd = "echo stderr-line >&2"
 	}
-	return config.Command{
+	return config.Task{
 		Name:    "stderr",
-		Command: cmd,
+		Actions: []config.Action{{Command: cmd, Background: false}},
 		RunMode: config.RunModeStream,
 	}
 }
 
-// multilineCmd returns a command that prints several lines.
-func multilineCmd() config.Command {
+// multilineTask returns a task that prints several lines.
+func multilineTask() config.Task {
 	var cmd string
 	if runtime.GOOS == "windows" {
 		cmd = "echo line1 && echo line2 && echo line3"
 	} else {
 		cmd = "printf 'line1\nline2\nline3\n'"
 	}
-	return config.Command{
+	return config.Task{
 		Name:    "multiline",
-		Command: cmd,
+		Actions: []config.Action{{Command: cmd, Background: false}},
 		RunMode: config.RunModeStream,
 	}
 }
 
-// failCmd returns a command that exits with a non-zero code.
-func failCmd() config.Command {
+// failTask returns a task that exits with a non-zero code.
+func failTask() config.Task {
 	var cmd string
 	if runtime.GOOS == "windows" {
 		cmd = "exit 1"
 	} else {
 		cmd = "exit 1"
 	}
-	return config.Command{Name: "fail", Command: cmd}
+	return config.Task{Name: "fail", Actions: []config.Action{{Command: cmd}}}
 }
 
 // ── FormatCommand ─────────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ func TestFormatCommand_SingleWord(t *testing.T) {
 
 func TestStream_CollectsStdout(t *testing.T) {
 	lines := make(chan runner.LogLine, 32)
-	if err := runner.Stream(echoCmd("hello"), lines); err != nil {
+	if err := runner.Stream(echoTask("hello"), lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -154,7 +154,7 @@ done:
 
 func TestStream_StderrMarkedIsErr(t *testing.T) {
 	lines := make(chan runner.LogLine, 32)
-	if err := runner.Stream(stderrCmd(), lines); err != nil {
+	if err := runner.Stream(stderrTask(), lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -185,7 +185,7 @@ done:
 
 func TestStream_ChannelClosedAfterExit(t *testing.T) {
 	lines := make(chan runner.LogLine, 32)
-	if err := runner.Stream(echoCmd("close-test"), lines); err != nil {
+	if err := runner.Stream(echoTask("close-test"), lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -204,7 +204,7 @@ func TestStream_ChannelClosedAfterExit(t *testing.T) {
 
 func TestStream_MultipleLines(t *testing.T) {
 	lines := make(chan runner.LogLine, 64)
-	if err := runner.Stream(multilineCmd(), lines); err != nil {
+	if err := runner.Stream(multilineTask(), lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -229,7 +229,7 @@ done:
 
 func TestStream_InvalidCommand(t *testing.T) {
 	lines := make(chan runner.LogLine, 8)
-	cmd := config.Command{Name: "bad", Command: "this_command_does_not_exist_xyz"}
+	cmd := config.Task{Name: "bad", Actions: []config.Action{{Command: "this_command_does_not_exist_xyz"}}}
 	// On Windows cmd /C will exit non-zero but won't error on Start.
 	// On Unix sh -c also won't error on Start for unknown commands.
 	// We just check the channel eventually closes.
@@ -253,7 +253,7 @@ func TestStream_InvalidCommand(t *testing.T) {
 // ── RunBackground ─────────────────────────────────────────────────────────────
 
 func TestRunBackground_ReturnsProc(t *testing.T) {
-	proc, err := runner.RunBackground(echoCmd("bg-test"))
+	proc, err := runner.RunBackground(echoTask("bg-test"))
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestRunBackground_ReturnsProc(t *testing.T) {
 }
 
 func TestRunBackground_CollectsOutput(t *testing.T) {
-	proc, err := runner.RunBackground(echoCmd("bg-hello"))
+	proc, err := runner.RunBackground(echoTask("bg-hello"))
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
 	}
@@ -313,7 +313,7 @@ done:
 }
 
 func TestRunBackground_WaitUnblocksAfterExit(t *testing.T) {
-	proc, err := runner.RunBackground(echoCmd("wait-test"))
+	proc, err := runner.RunBackground(echoTask("wait-test"))
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
 	}
@@ -346,7 +346,7 @@ drained:
 }
 
 func TestRunBackground_MultipleLines(t *testing.T) {
-	proc, err := runner.RunBackground(multilineCmd())
+	proc, err := runner.RunBackground(multilineTask())
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestStream_WorkingDirectory(t *testing.T) {
 	}
 
 	lines := make(chan runner.LogLine, 16)
-	if err := runner.Stream(config.Command{Name: "pwd", Command: cmd, Dir: tmp}, lines); err != nil {
+	if err := runner.Stream(config.Task{Name: "pwd", Actions: []config.Action{{Command: cmd}}, Dir: tmp}, lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -416,8 +416,8 @@ done:
 
 // ── Multi-command (Commands field) ────────────────────────────────────────────
 
-// multiStepCmd returns a command with two shell steps.
-func multiStepCmd() config.Command {
+// multiActionTask returns a task with two shell actions.
+func multiActionTask() config.Task {
 	var step1, step2 string
 	if runtime.GOOS == "windows" {
 		step1 = "echo step-one"
@@ -426,16 +426,16 @@ func multiStepCmd() config.Command {
 		step1 = "echo step-one"
 		step2 = "echo step-two"
 	}
-	return config.Command{
-		Name:     "multi",
-		Commands: []string{step1, step2},
-		RunMode:  config.RunModeStream,
+	return config.Task{
+		Name:    "multi",
+		Actions: []config.Action{{Command: step1}, {Command: step2}},
+		RunMode: config.RunModeStream,
 	}
 }
 
 func TestStream_MultiStep_AllOutputCollected(t *testing.T) {
 	lines := make(chan runner.LogLine, 64)
-	if err := runner.Stream(multiStepCmd(), lines); err != nil {
+	if err := runner.Stream(multiActionTask(), lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -472,7 +472,7 @@ done:
 
 func TestStream_MultiStep_StepsAnnouncedInOrder(t *testing.T) {
 	lines := make(chan runner.LogLine, 64)
-	if err := runner.Stream(multiStepCmd(), lines); err != nil {
+	if err := runner.Stream(multiActionTask(), lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -504,7 +504,7 @@ done:
 }
 
 func TestRunBackground_MultiStep_AllOutputCollected(t *testing.T) {
-	proc, err := runner.RunBackground(multiStepCmd())
+	proc, err := runner.RunBackground(multiActionTask())
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
 	}
@@ -540,8 +540,8 @@ done:
 	}
 }
 
-func TestStream_MultiStep_EmptyCommandsClosesChannel(t *testing.T) {
-	cmd := config.Command{Name: "empty", Commands: []string{}}
+func TestStream_MultiStep_EmptyActionsClosesChannel(t *testing.T) {
+	cmd := config.Task{Name: "empty", Actions: []config.Action{}}
 	lines := make(chan runner.LogLine, 8)
 	if err := runner.Stream(cmd, lines); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -557,67 +557,67 @@ func TestStream_MultiStep_EmptyCommandsClosesChannel(t *testing.T) {
 	}
 }
 
-func TestWizard_MultiStep_CommitCommand(t *testing.T) {
-	// This tests the wizard helper logic via the addCommand flow with extra step.
-	// We verify Steps() returns both commands after round-tripping through config.
-	cmd := config.Command{
-		Name:     "Setup",
-		Commands: []string{"npm install", "npm run dev"},
-		RunMode:  config.RunModeHandoff,
+func TestWizard_MultiAction_CommitCommand(t *testing.T) {
+	// This tests the wizard helper logic via the addCommand flow with extra action.
+	// We verify AllCommands() returns both commands after round-tripping through config.
+	task := config.Task{
+		Name:    "Setup",
+		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run dev"}},
+		RunMode: config.RunModeHandoff,
 	}
-	steps := cmd.AllSteps()
-	if len(steps) != 2 {
-		t.Fatalf("Steps() len: got %d, want 2", len(steps))
+	cmds := task.AllCommands()
+	if len(cmds) != 2 {
+		t.Fatalf("AllCommands() len: got %d, want 2", len(cmds))
 	}
-	if steps[0] != "npm install" || steps[1] != "npm run dev" {
-		t.Errorf("Steps(): got %v", steps)
+	if cmds[0] != "npm install" || cmds[1] != "npm run dev" {
+		t.Errorf("AllCommands(): got %v", cmds)
 	}
 }
 
 // ── Handoff ───────────────────────────────────────────────────────────────────
 
 func TestHandoff_SuccessfulCommand(t *testing.T) {
-	cmd := echoCmd("handoff-ok")
-	err := runner.Handoff(cmd)
+	task := echoTask("handoff-ok")
+	err := runner.Handoff(task)
 	if err != nil {
 		t.Errorf("Handoff should succeed for echo command, got: %v", err)
 	}
 }
 
-func TestHandoff_EmptyStepsReturnsNil(t *testing.T) {
-	cmd := config.Command{Name: "empty", Command: ""}
-	err := runner.Handoff(cmd)
+func TestHandoff_EmptyActionsReturnsNil(t *testing.T) {
+	task := config.Task{Name: "empty", Actions: []config.Action{}}
+	err := runner.Handoff(task)
 	if err != nil {
 		t.Errorf("Handoff with empty steps should return nil, got: %v", err)
 	}
 }
 
-func TestHandoff_EmptyCommandsSlice(t *testing.T) {
-	cmd := config.Command{Name: "empty", Commands: []string{}}
-	err := runner.Handoff(cmd)
+func TestHandoff_EmptyActionsSlice(t *testing.T) {
+	task := config.Task{Name: "empty", Actions: []config.Action{}}
+	err := runner.Handoff(task)
 	if err != nil {
 		t.Errorf("Handoff with empty Commands slice should return nil, got: %v", err)
 	}
 }
 
 func TestHandoff_FailingCommandReturnsError(t *testing.T) {
-	cmd := failCmd()
-	err := runner.Handoff(cmd)
+	task := failTask()
+	err := runner.Handoff(task)
 	if err == nil {
 		t.Error("Handoff should return error when command exits non-zero")
 	}
 }
 
-func TestHandoff_MultiStep_AllSucceed(t *testing.T) {
-	cmd := multiStepCmd() // has Commands: []string{"echo step-one", "echo step-two"}
-	cmd.RunMode = config.RunModeHandoff
-	err := runner.Handoff(cmd)
+func TestHandoff_MultiAction_AllSucceed(t *testing.T) {
+	task := multiActionTask() // has Actions: []Action{{Command: "echo step-one"}, {Command: "echo step-two"}}
+	task.RunMode = config.RunModeHandoff
+	err := runner.Handoff(task)
 	if err != nil {
 		t.Errorf("Handoff multi-step should succeed, got: %v", err)
 	}
 }
 
-func TestHandoff_MultiStep_FailOnFirstStep_WrapsError(t *testing.T) {
+func TestHandoff_MultiAction_FailOnFirstAction_WrapsError(t *testing.T) {
 	var step1, step2 string
 	if runtime.GOOS == "windows" {
 		step1 = "exit 1"
@@ -626,12 +626,12 @@ func TestHandoff_MultiStep_FailOnFirstStep_WrapsError(t *testing.T) {
 		step1 = "exit 1"
 		step2 = "echo step-two"
 	}
-	cmd := config.Command{
-		Name:     "multi-fail",
-		Commands: []string{step1, step2},
-		RunMode:  config.RunModeHandoff,
+	task := config.Task{
+		Name:    "multi-fail",
+		Actions: []config.Action{{Command: step1}, {Command: step2}},
+		RunMode: config.RunModeHandoff,
 	}
-	err := runner.Handoff(cmd)
+	err := runner.Handoff(task)
 	if err == nil {
 		t.Fatal("Handoff multi-step should return error when first step fails")
 	}
@@ -641,8 +641,8 @@ func TestHandoff_MultiStep_FailOnFirstStep_WrapsError(t *testing.T) {
 	}
 }
 
-func TestHandoff_MultiStep_StopsOnFirstFailure(t *testing.T) {
-	// Use a temp file as a side effect to verify the second step does NOT run.
+func TestHandoff_MultiAction_StopsOnFirstFailure(t *testing.T) {
+	// Use a temp file as a side effect to verify the second action does NOT run.
 	tmp := t.TempDir()
 	var step1, step2 string
 	if runtime.GOOS == "windows" {
@@ -652,11 +652,11 @@ func TestHandoff_MultiStep_StopsOnFirstFailure(t *testing.T) {
 		step1 = "exit 1"
 		step2 = "touch " + tmp + "/sentinel.txt"
 	}
-	cmd := config.Command{
-		Name:     "stop-on-fail",
-		Commands: []string{step1, step2},
+	task := config.Task{
+		Name:    "stop-on-fail",
+		Actions: []config.Action{{Command: step1}, {Command: step2}},
 	}
-	_ = runner.Handoff(cmd)
+	_ = runner.Handoff(task)
 
 	// The sentinel file should NOT exist because execution stopped at step 1.
 	if _, statErr := os.Stat(tmp + "/sentinel.txt"); statErr == nil {
@@ -668,7 +668,7 @@ func TestHandoff_MultiStep_StopsOnFirstFailure(t *testing.T) {
 
 // ── Stream: multi-step failure ─────────────────────────────────────────────────
 
-func TestStream_MultiStep_FailOnFirstStep_SendsErrorLine(t *testing.T) {
+func TestStream_MultiAction_FailOnFirstAction_SendsErrorLine(t *testing.T) {
 	var step1, step2 string
 	if runtime.GOOS == "windows" {
 		step1 = "exit 1"
@@ -677,13 +677,13 @@ func TestStream_MultiStep_FailOnFirstStep_SendsErrorLine(t *testing.T) {
 		step1 = "exit 1"
 		step2 = "echo step-two"
 	}
-	cmd := config.Command{
-		Name:     "fail-multi",
-		Commands: []string{step1, step2},
-		RunMode:  config.RunModeStream,
+	task := config.Task{
+		Name:    "fail-multi",
+		Actions: []config.Action{{Command: step1}, {Command: step2}},
+		RunMode: config.RunModeStream,
 	}
 	lines := make(chan runner.LogLine, 64)
-	if err := runner.Stream(cmd, lines); err != nil {
+	if err := runner.Stream(task, lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -741,8 +741,8 @@ func TestStream_LargeLineIsReceived(t *testing.T) {
 	// 256 KB line — well above the old 64 KB default.
 	const lineSize = 256 * 1024
 	lines := make(chan runner.LogLine, 4)
-	cmd := config.Command{Name: "large", Command: largeLine(lineSize), RunMode: config.RunModeStream}
-	if err := runner.Stream(cmd, lines); err != nil {
+	task := config.Task{Name: "large", Actions: []config.Action{{Command: largeLine(lineSize)}}, RunMode: config.RunModeStream}
+	if err := runner.Stream(task, lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -781,8 +781,8 @@ func TestStream_LargeLine_ChannelClosedAfterExit(t *testing.T) {
 	// previously the scanner would stall and the channel would stay open.
 	const lineSize = 256 * 1024
 	lines := make(chan runner.LogLine, 4)
-	cmd := config.Command{Name: "large-close", Command: largeLine(lineSize), RunMode: config.RunModeStream}
-	if err := runner.Stream(cmd, lines); err != nil {
+	task := config.Task{Name: "large-close", Actions: []config.Action{{Command: largeLine(lineSize)}}, RunMode: config.RunModeStream}
+	if err := runner.Stream(task, lines); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
@@ -801,8 +801,8 @@ func TestStream_LargeLine_ChannelClosedAfterExit(t *testing.T) {
 
 func TestRunBackground_LargeLineIsReceived(t *testing.T) {
 	const lineSize = 256 * 1024
-	cmd := config.Command{Name: "bg-large", Command: largeLine(lineSize), RunMode: config.RunModeBackground}
-	proc, err := runner.RunBackground(cmd)
+	task := config.Task{Name: "bg-large", Actions: []config.Action{{Command: largeLine(lineSize)}}, RunMode: config.RunModeBackground}
+	proc, err := runner.RunBackground(task)
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
 	}
@@ -838,9 +838,9 @@ done:
 
 // ── RunBackground: empty steps ─────────────────────────────────────────────────
 
-func TestRunBackground_EmptySteps_ClosesImmediately(t *testing.T) {
-	cmd := config.Command{Name: "empty-bg", Commands: []string{}}
-	proc, err := runner.RunBackground(cmd)
+func TestRunBackground_EmptyActions_ClosesImmediately(t *testing.T) {
+	task := config.Task{Name: "empty-bg", Actions: []config.Action{}}
+	proc, err := runner.RunBackground(task)
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
 	}
@@ -859,7 +859,7 @@ func TestRunBackground_EmptySteps_ClosesImmediately(t *testing.T) {
 	}
 }
 
-func TestRunBackground_MultiStep_ErrorLineOnStepFailure(t *testing.T) {
+func TestRunBackground_MultiAction_ErrorLineOnActionFailure(t *testing.T) {
 	var step1, step2 string
 	if runtime.GOOS == "windows" {
 		step1 = "exit 1"
@@ -868,12 +868,12 @@ func TestRunBackground_MultiStep_ErrorLineOnStepFailure(t *testing.T) {
 		step1 = "exit 1"
 		step2 = "echo step-two"
 	}
-	cmd := config.Command{
-		Name:     "bg-fail",
-		Commands: []string{step1, step2},
-		RunMode:  config.RunModeBackground,
+	task := config.Task{
+		Name:    "bg-fail",
+		Actions: []config.Action{{Command: step1}, {Command: step2}},
+		RunMode: config.RunModeBackground,
 	}
-	proc, err := runner.RunBackground(cmd)
+	proc, err := runner.RunBackground(task)
 	if err != nil {
 		t.Fatalf("RunBackground error: %v", err)
 	}

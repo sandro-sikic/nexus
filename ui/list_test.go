@@ -10,16 +10,24 @@ import (
 
 // helpers ─────────────────────────────────────────────────────────────────────
 
-func listCfg(cmds ...config.Command) *config.Config {
+func listCfg(tasks ...config.Task) *config.Config {
 	return &config.Config{
-		Title:    "Test",
-		RunMode:  config.RunModeStream,
-		Commands: cmds,
+		Title:   "Test",
+		RunMode: config.RunModeStream,
+		Tasks:   tasks,
 	}
 }
 
-func cmd(name, command string) config.Command {
-	return config.Command{Name: name, Command: command, RunMode: config.RunModeStream}
+func task(name string, commands []string) config.Task {
+	actions := make([]config.Action, len(commands))
+	for i, cmd := range commands {
+		actions[i] = config.Action{Command: cmd}
+	}
+	return config.Task{Name: name, Actions: actions, RunMode: config.RunModeStream}
+}
+
+func cmd(name, command string) config.Task {
+	return task(name, []string{command})
 }
 
 func keyMsg(key string) tea.KeyMsg {
@@ -33,7 +41,7 @@ func arrowMsg(t tea.KeyType) tea.KeyMsg {
 // ── Construction ──────────────────────────────────────────────────────────────
 
 func TestNewListModel_InitialState(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "echo a"), cmd("B", "echo b")))
+	m := NewListModel(listCfg(task("A", []string{"echo a"}), task("B", []string{"echo b"})))
 
 	if m.cursor != 0 {
 		t.Errorf("initial cursor: got %d, want 0", m.cursor)
@@ -44,8 +52,8 @@ func TestNewListModel_InitialState(t *testing.T) {
 	if m.title != "Test" {
 		t.Errorf("title: got %q, want Test", m.title)
 	}
-	if len(m.commands) != 2 {
-		t.Errorf("commands len: got %d, want 2", len(m.commands))
+	if len(m.tasks) != 2 {
+		t.Errorf("tasks len: got %d, want 2", len(m.tasks))
 	}
 }
 
@@ -66,7 +74,7 @@ func TestListModel_Init_ReturnsNil(t *testing.T) {
 // ── Navigation ────────────────────────────────────────────────────────────────
 
 func TestListModel_MoveDown(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a"), cmd("B", "b"), cmd("C", "c")))
+	m := NewListModel(listCfg(task("A", []string{"a"}), task("B", []string{"b"}), task("C", []string{"c"})))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	if m.cursor != 1 {
 		t.Errorf("after down: cursor = %d, want 1", m.cursor)
@@ -74,7 +82,7 @@ func TestListModel_MoveDown(t *testing.T) {
 }
 
 func TestListModel_MoveDown_JKey(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a"), cmd("B", "b")))
+	m := NewListModel(listCfg(task("A", []string{"a"}), task("B", []string{"b"})))
 	m, _ = m.Update(keyMsg("j"))
 	if m.cursor != 1 {
 		t.Errorf("after j: cursor = %d, want 1", m.cursor)
@@ -82,7 +90,7 @@ func TestListModel_MoveDown_JKey(t *testing.T) {
 }
 
 func TestListModel_MoveUp(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a"), cmd("B", "b")))
+	m := NewListModel(listCfg(task("A", []string{"a"}), task("B", []string{"b"})))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	m, _ = m.Update(arrowMsg(tea.KeyUp))
 	if m.cursor != 0 {
@@ -91,7 +99,7 @@ func TestListModel_MoveUp(t *testing.T) {
 }
 
 func TestListModel_MoveUp_KKey(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a"), cmd("B", "b")))
+	m := NewListModel(listCfg(task("A", []string{"a"}), task("B", []string{"b"})))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	m, _ = m.Update(keyMsg("k"))
 	if m.cursor != 0 {
@@ -100,7 +108,7 @@ func TestListModel_MoveUp_KKey(t *testing.T) {
 }
 
 func TestListModel_CursorDoesNotGoAboveZero(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a"), cmd("B", "b")))
+	m := NewListModel(listCfg(task("A", []string{"a"}), task("B", []string{"b"})))
 	m, _ = m.Update(arrowMsg(tea.KeyUp))
 	m, _ = m.Update(arrowMsg(tea.KeyUp))
 	if m.cursor != 0 {
@@ -109,7 +117,7 @@ func TestListModel_CursorDoesNotGoAboveZero(t *testing.T) {
 }
 
 func TestListModel_CursorDoesNotGoBeyondLast(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a"), cmd("B", "b")))
+	m := NewListModel(listCfg(task("A", []string{"a"}), task("B", []string{"b"})))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
@@ -119,8 +127,8 @@ func TestListModel_CursorDoesNotGoBeyondLast(t *testing.T) {
 }
 
 func TestListModel_NavigateFullList(t *testing.T) {
-	cmds := []config.Command{cmd("A", "a"), cmd("B", "b"), cmd("C", "c"), cmd("D", "d")}
-	m := NewListModel(listCfg(cmds...))
+	tasks := []config.Task{task("A", []string{"a"}), task("B", []string{"b"}), task("C", []string{"c"}), task("D", []string{"d"})}
+	m := NewListModel(listCfg(tasks...))
 
 	for i := 0; i < 3; i++ {
 		m, _ = m.Update(arrowMsg(tea.KeyDown))
@@ -140,7 +148,7 @@ func TestListModel_NavigateFullList(t *testing.T) {
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 func TestListModel_SelectWithEnter(t *testing.T) {
-	m := NewListModel(listCfg(cmd("Build", "make build"), cmd("Test", "make test")))
+	m := NewListModel(listCfg(task("Build", []string{"make build"}), task("Test", []string{"make test"})))
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	sel := m.Selected()
@@ -153,7 +161,7 @@ func TestListModel_SelectWithEnter(t *testing.T) {
 }
 
 func TestListModel_SelectSecondItem(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a"), cmd("B", "b")))
+	m := NewListModel(listCfg(task("A", []string{"a"}), task("B", []string{"b"})))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -167,7 +175,7 @@ func TestListModel_SelectSecondItem(t *testing.T) {
 }
 
 func TestListModel_SelectWithSpace(t *testing.T) {
-	m := NewListModel(listCfg(cmd("X", "x")))
+	m := NewListModel(listCfg(task("X", []string{"x"})))
 	m, _ = m.Update(keyMsg(" "))
 	if m.Selected() == nil {
 		t.Error("space should select item")
@@ -195,15 +203,15 @@ func TestListModel_WindowSizeUpdate(t *testing.T) {
 // ── View ──────────────────────────────────────────────────────────────────────
 
 func TestListModel_ViewContainsTitle(t *testing.T) {
-	m := NewListModel(listCfg(cmd("Alpha", "echo alpha")))
+	m := NewListModel(listCfg(task("Alpha", []string{"echo alpha"})))
 	v := m.View()
 	if !strings.Contains(v, "Test") {
 		t.Errorf("view does not contain title, got:\n%s", v)
 	}
 }
 
-func TestListModel_ViewContainsCommandNames(t *testing.T) {
-	m := NewListModel(listCfg(cmd("BuildIt", "make"), cmd("TestIt", "go test")))
+func TestListModel_ViewContainsTaskNames(t *testing.T) {
+	m := NewListModel(listCfg(task("BuildIt", []string{"make"}), task("TestIt", []string{"go test"})))
 	v := m.View()
 	if !strings.Contains(v, "BuildIt") {
 		t.Errorf("view missing BuildIt:\n%s", v)
@@ -214,7 +222,7 @@ func TestListModel_ViewContainsCommandNames(t *testing.T) {
 }
 
 func TestListModel_ViewContainsCommands(t *testing.T) {
-	m := NewListModel(listCfg(cmd("Run", "npm start")))
+	m := NewListModel(listCfg(task("Run", []string{"npm start"})))
 	v := m.View()
 	if !strings.Contains(v, "npm start") {
 		t.Errorf("view missing command string:\n%s", v)
@@ -222,8 +230,8 @@ func TestListModel_ViewContainsCommands(t *testing.T) {
 }
 
 func TestListModel_ViewContainsDescription(t *testing.T) {
-	c := config.Command{Name: "X", Description: "does things", Command: "x", RunMode: config.RunModeStream}
-	m := NewListModel(listCfg(c))
+	tst := config.Task{Name: "X", Description: "does things", Actions: []config.Action{{Command: "x"}}, RunMode: config.RunModeStream}
+	m := NewListModel(listCfg(tst))
 	v := m.View()
 	if !strings.Contains(v, "does things") {
 		t.Errorf("view missing description:\n%s", v)
@@ -231,7 +239,7 @@ func TestListModel_ViewContainsDescription(t *testing.T) {
 }
 
 func TestListModel_ViewContainsHelpText(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a")))
+	m := NewListModel(listCfg(task("A", []string{"a"})))
 	v := m.View()
 	if !strings.Contains(v, "navigate") && !strings.Contains(v, "quit") {
 		t.Errorf("view missing help text:\n%s", v)
@@ -248,7 +256,7 @@ func TestListModel_ViewEmptyList(t *testing.T) {
 }
 
 func TestListModel_UnknownKeyIgnored(t *testing.T) {
-	m := NewListModel(listCfg(cmd("A", "a"), cmd("B", "b")))
+	m := NewListModel(listCfg(task("A", []string{"a"}), task("B", []string{"b"})))
 	before := m.cursor
 	m, _ = m.Update(keyMsg("x"))
 	if m.cursor != before {

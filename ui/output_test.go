@@ -12,11 +12,11 @@ import (
 // ── OutputModel construction ──────────────────────────────────────────────────
 
 func TestNewOutputModel_InitialState(t *testing.T) {
-	c := config.Command{Name: "Echo", Command: "echo hi", RunMode: config.RunModeStream}
+	c := config.Task{Name: "Echo", Actions: []config.Action{{Command: "echo hi", Background: false}}, RunMode: config.RunModeStream}
 	m := NewOutputModel(c)
 
-	if m.cmd.Name != "Echo" {
-		t.Errorf("cmd.Name: got %q, want Echo", m.cmd.Name)
+	if m.task.Name != "Echo" {
+		t.Errorf("task.Name: got %q, want Echo", m.task.Name)
 	}
 	if m.done {
 		t.Error("initial done should be false")
@@ -38,7 +38,7 @@ func TestNewOutputModel_InitialState(t *testing.T) {
 // ── OutputModel.Update: WindowSize ────────────────────────────────────────────
 
 func TestOutputModel_WindowSizeUpdate(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	if m.width != 120 || m.height != 40 {
 		t.Errorf("after resize: got %dx%d, want 120x40", m.width, m.height)
@@ -48,7 +48,7 @@ func TestOutputModel_WindowSizeUpdate(t *testing.T) {
 // ── OutputModel.Update: outputDoneMsg ─────────────────────────────────────────
 
 func TestOutputModel_DoneMsgSetsDone(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m, _ = m.Update(outputDoneMsg{})
 	if !m.done {
 		t.Error("outputDoneMsg should set done=true")
@@ -59,7 +59,7 @@ func TestOutputModel_DoneMsgSetsDone(t *testing.T) {
 }
 
 func TestOutputModel_DoneMsgWithError(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	fakeErr := &testError{"something went wrong"}
 	m, _ = m.Update(outputDoneMsg{err: fakeErr})
 	if !m.done {
@@ -76,7 +76,7 @@ func TestOutputModel_DoneMsgWithError(t *testing.T) {
 // ── OutputModel.Update: line message ─────────────────────────────────────────
 
 func TestOutputModel_LineMessageAppendsLine(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	ch := make(chan runner.LogLine, 1)
 	lineMsg := struct {
 		line  runner.LogLine
@@ -93,7 +93,7 @@ func TestOutputModel_LineMessageAppendsLine(t *testing.T) {
 }
 
 func TestOutputModel_LineMessageAutoScrolls(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m.height = 10 // visible = 10-6 = 4
 
 	ch := make(chan runner.LogLine, 10)
@@ -116,7 +116,7 @@ func TestOutputModel_LineMessageAutoScrolls(t *testing.T) {
 // ── OutputModel.Update: scroll keys ──────────────────────────────────────────
 
 func TestOutputModel_ScrollUp(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m.offset = 5
 	m, _ = m.Update(arrowMsg(tea.KeyUp))
 	if m.offset != 4 {
@@ -125,7 +125,7 @@ func TestOutputModel_ScrollUp(t *testing.T) {
 }
 
 func TestOutputModel_ScrollUp_KKey(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m.offset = 3
 	m, _ = m.Update(keyMsg("k"))
 	if m.offset != 2 {
@@ -134,7 +134,7 @@ func TestOutputModel_ScrollUp_KKey(t *testing.T) {
 }
 
 func TestOutputModel_ScrollUpDoesNotGoBelowZero(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m.offset = 0
 	m, _ = m.Update(arrowMsg(tea.KeyUp))
 	if m.offset != 0 {
@@ -143,7 +143,7 @@ func TestOutputModel_ScrollUpDoesNotGoBelowZero(t *testing.T) {
 }
 
 func TestOutputModel_ScrollDown(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m.height = 10
 	// Add enough lines so scrolling is possible
 	for i := 0; i < 10; i++ {
@@ -157,7 +157,7 @@ func TestOutputModel_ScrollDown(t *testing.T) {
 }
 
 func TestOutputModel_ScrollDown_JKey(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m.height = 10
 	for i := 0; i < 10; i++ {
 		m.lines = append(m.lines, runner.LogLine{Text: "x"})
@@ -170,7 +170,7 @@ func TestOutputModel_ScrollDown_JKey(t *testing.T) {
 }
 
 func TestOutputModel_ScrollDownBounded(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	m.height = 10
 	for i := 0; i < 10; i++ {
 		m.lines = append(m.lines, runner.LogLine{Text: "x"})
@@ -189,7 +189,7 @@ func TestOutputModel_ScrollDownBounded(t *testing.T) {
 // ── OutputModel.Update: streamStartMsg ───────────────────────────────────────
 
 func TestOutputModel_StreamStartMsgReturnsCmd(t *testing.T) {
-	m := NewOutputModel(config.Command{})
+	m := NewOutputModel(config.Task{})
 	ch := make(chan runner.LogLine, 1)
 	_, cmd := m.Update(streamStartMsg{lines: ch})
 	if cmd == nil {
@@ -200,16 +200,16 @@ func TestOutputModel_StreamStartMsgReturnsCmd(t *testing.T) {
 // ── OutputModel.View ──────────────────────────────────────────────────────────
 
 func TestOutputModel_ViewContainsCmdName(t *testing.T) {
-	c := config.Command{Name: "MyCmd", Command: "echo hi"}
+	c := config.Task{Name: "MyCmd", Actions: []config.Action{{Command: "echo hi"}}}
 	m := NewOutputModel(c)
 	v := m.View()
 	if !strings.Contains(v, "MyCmd") {
-		t.Errorf("view missing cmd name:\n%s", v)
+		t.Errorf("view missing task name:\n%s", v)
 	}
 }
 
-func TestOutputModel_ViewContainsCmdString(t *testing.T) {
-	c := config.Command{Name: "X", Command: "npm run dev"}
+func TestOutputModel_ViewContainsTaskString(t *testing.T) {
+	c := config.Task{Name: "X", Actions: []config.Action{{Command: "npm run dev"}}}
 	m := NewOutputModel(c)
 	v := m.View()
 	if !strings.Contains(v, "npm run dev") {
@@ -218,7 +218,7 @@ func TestOutputModel_ViewContainsCmdString(t *testing.T) {
 }
 
 func TestOutputModel_ViewShowsRunningHelpWhenNotDone(t *testing.T) {
-	m := NewOutputModel(config.Command{Name: "X", Command: "y"})
+	m := NewOutputModel(config.Task{Name: "X", Actions: []config.Action{{Command: "y"}}})
 	v := m.View()
 	if !strings.Contains(v, "running") {
 		t.Errorf("view should show 'running' when not done:\n%s", v)
@@ -226,7 +226,7 @@ func TestOutputModel_ViewShowsRunningHelpWhenNotDone(t *testing.T) {
 }
 
 func TestOutputModel_ViewShowsDoneHelpWhenDone(t *testing.T) {
-	m := NewOutputModel(config.Command{Name: "X", Command: "y"})
+	m := NewOutputModel(config.Task{Name: "X", Actions: []config.Action{{Command: "y"}}})
 	m, _ = m.Update(outputDoneMsg{})
 	v := m.View()
 	if !strings.Contains(v, "back") && !strings.Contains(v, "esc") && !strings.Contains(v, "q") {
@@ -235,7 +235,7 @@ func TestOutputModel_ViewShowsDoneHelpWhenDone(t *testing.T) {
 }
 
 func TestOutputModel_ViewShowsErrorWhenFailed(t *testing.T) {
-	m := NewOutputModel(config.Command{Name: "X", Command: "y"})
+	m := NewOutputModel(config.Task{Name: "X", Actions: []config.Action{{Command: "y"}}})
 	m, _ = m.Update(outputDoneMsg{err: &testError{"boom"}})
 	v := m.View()
 	if !strings.Contains(v, "boom") {
@@ -244,7 +244,7 @@ func TestOutputModel_ViewShowsErrorWhenFailed(t *testing.T) {
 }
 
 func TestOutputModel_ViewRendersLines(t *testing.T) {
-	m := NewOutputModel(config.Command{Name: "X", Command: "y"})
+	m := NewOutputModel(config.Task{Name: "X", Actions: []config.Action{{Command: "y"}}})
 	m.lines = []runner.LogLine{
 		{Text: "output-line-one", IsErr: false},
 		{Text: "output-line-two", IsErr: false},
@@ -256,7 +256,7 @@ func TestOutputModel_ViewRendersLines(t *testing.T) {
 }
 
 func TestOutputModel_ViewRendersErrorLines(t *testing.T) {
-	m := NewOutputModel(config.Command{Name: "X", Command: "y"})
+	m := NewOutputModel(config.Task{Name: "X", Actions: []config.Action{{Command: "y"}}})
 	m.lines = []runner.LogLine{{Text: "err-output", IsErr: true}}
 	v := m.View()
 	if !strings.Contains(v, "err-output") {
@@ -267,9 +267,9 @@ func TestOutputModel_ViewRendersErrorLines(t *testing.T) {
 // ── BackgroundModel construction ──────────────────────────────────────────────
 
 func TestNewBackgroundModel_InitialState(t *testing.T) {
-	c := config.Command{Name: "BG", Command: "echo bg", RunMode: config.RunModeBackground}
+	c := config.Task{Name: "BG", Actions: []config.Action{{Command: "echo bg"}}, RunMode: config.RunModeBackground}
 	m := BackgroundModel{
-		cmd:    c,
+		task:   c,
 		width:  80,
 		height: 24,
 	}
@@ -342,7 +342,7 @@ func TestBackgroundModel_ScrollDown(t *testing.T) {
 // ── BackgroundModel.View ──────────────────────────────────────────────────────
 
 func TestBackgroundModel_ViewContainsCmdName(t *testing.T) {
-	m := BackgroundModel{cmd: config.Command{Name: "MyBG", Command: "x"}, height: 24}
+	m := BackgroundModel{task: config.Task{Name: "MyBG", Actions: []config.Action{{Command: "x"}}}, height: 24}
 	v := m.View()
 	if !strings.Contains(v, "MyBG") {
 		t.Errorf("view missing cmd name:\n%s", v)
@@ -350,7 +350,7 @@ func TestBackgroundModel_ViewContainsCmdName(t *testing.T) {
 }
 
 func TestBackgroundModel_ViewShowsRunningStatus(t *testing.T) {
-	m := BackgroundModel{cmd: config.Command{Name: "X", Command: "y"}, height: 24}
+	m := BackgroundModel{task: config.Task{Name: "X", Actions: []config.Action{{Command: "y"}}}, height: 24}
 	v := m.View()
 	if !strings.Contains(v, "running") {
 		t.Errorf("view should show 'running' when not done:\n%s", v)
@@ -358,7 +358,7 @@ func TestBackgroundModel_ViewShowsRunningStatus(t *testing.T) {
 }
 
 func TestBackgroundModel_ViewShowsDoneStatus(t *testing.T) {
-	m := BackgroundModel{cmd: config.Command{Name: "X", Command: "y"}, height: 24, done: true}
+	m := BackgroundModel{task: config.Task{Name: "X", Actions: []config.Action{{Command: "y"}}}, height: 24, done: true}
 	v := m.View()
 	if !strings.Contains(v, "done") {
 		t.Errorf("view should show 'done' when finished:\n%s", v)
@@ -367,7 +367,7 @@ func TestBackgroundModel_ViewShowsDoneStatus(t *testing.T) {
 
 func TestBackgroundModel_ViewRendersLines(t *testing.T) {
 	m := BackgroundModel{
-		cmd:    config.Command{Name: "X", Command: "y"},
+		task:   config.Task{Name: "X", Actions: []config.Action{{Command: "y"}}},
 		height: 24,
 		lines:  []runner.LogLine{{Text: "bg-output-line"}},
 	}
@@ -379,11 +379,11 @@ func TestBackgroundModel_ViewRendersLines(t *testing.T) {
 
 // ── OutputModel.View: multi-step command display ───────────────────────────────
 
-func TestOutputModel_ViewMultiStepShowsAllSteps(t *testing.T) {
-	c := config.Command{
-		Name:     "MultiStepCmd",
-		Commands: []string{"npm install", "npm run build"},
-		RunMode:  config.RunModeStream,
+func TestOutputModel_ViewMultiActionShowsAllActions(t *testing.T) {
+	c := config.Task{
+		Name:    "MultiActionTask",
+		Actions: []config.Action{{Command: "npm install"}, {Command: "npm run build"}},
+		RunMode: config.RunModeStream,
 	}
 	m := NewOutputModel(c)
 	v := m.View()
@@ -399,8 +399,8 @@ func TestOutputModel_ViewMultiStepShowsAllSteps(t *testing.T) {
 	}
 }
 
-func TestOutputModel_ViewSingleStepDoesNotShowNumbered(t *testing.T) {
-	c := config.Command{Name: "Single", Command: "echo hi"}
+func TestOutputModel_ViewSingleActionDoesNotShowNumbered(t *testing.T) {
+	c := config.Task{Name: "Single", Actions: []config.Action{{Command: "echo hi"}}}
 	m := NewOutputModel(c)
 	v := m.View()
 	// Single-step path should use "$ cmd" without numbered steps
@@ -473,9 +473,9 @@ func TestBackgroundModel_AutoScrollOnLineMessage(t *testing.T) {
 
 func TestBackgroundModel_ViewMultiStepShowsAllSteps(t *testing.T) {
 	m := BackgroundModel{
-		cmd: config.Command{
-			Name:     "BGMulti",
-			Commands: []string{"step-a", "step-b"},
+		task: config.Task{
+			Name:    "BGMulti",
+			Actions: []config.Action{{Command: "step-a"}, {Command: "step-b"}},
 		},
 		height: 24,
 	}

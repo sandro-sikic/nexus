@@ -28,10 +28,12 @@ func TestLoad_FullConfig(t *testing.T) {
 	yaml := `
 title: "Test Nexus"
 run_mode: handoff
-commands:
+tasks:
   - name: Build
     description: Build the project
-    command: "make build"
+    actions:
+      - command: "make build"
+        background: false
     dir: /tmp
     run_mode: stream
     group: CI
@@ -47,35 +49,41 @@ commands:
 	if cfg.RunMode != config.RunModeHandoff {
 		t.Errorf("run_mode: got %q, want %q", cfg.RunMode, config.RunModeHandoff)
 	}
-	if len(cfg.Commands) != 1 {
-		t.Fatalf("commands: got %d, want 1", len(cfg.Commands))
+	if len(cfg.Tasks) != 1 {
+		t.Fatalf("tasks: got %d, want 1", len(cfg.Tasks))
 	}
 
-	cmd := cfg.Commands[0]
-	if cmd.Name != "Build" {
-		t.Errorf("cmd.name: got %q, want %q", cmd.Name, "Build")
+	task := cfg.Tasks[0]
+	if task.Name != "Build" {
+		t.Errorf("task.name: got %q, want %q", task.Name, "Build")
 	}
-	if cmd.Description != "Build the project" {
-		t.Errorf("cmd.description: got %q", cmd.Description)
+	if task.Description != "Build the project" {
+		t.Errorf("task.description: got %q", task.Description)
 	}
-	if cmd.Command != "make build" {
-		t.Errorf("cmd.command: got %q", cmd.Command)
+	if len(task.Actions) != 1 {
+		t.Fatalf("task.actions: got %d, want 1", len(task.Actions))
 	}
-	if cmd.Dir != "/tmp" {
-		t.Errorf("cmd.dir: got %q", cmd.Dir)
+	if task.Actions[0].Command != "make build" {
+		t.Errorf("task.actions[0].command: got %q", task.Actions[0].Command)
 	}
-	if cmd.RunMode != config.RunModeStream {
-		t.Errorf("cmd.run_mode: got %q, want stream", cmd.RunMode)
+	if task.Actions[0].Background != false {
+		t.Errorf("task.actions[0].background: got %v, want false", task.Actions[0].Background)
 	}
-	if cmd.Group != "CI" {
-		t.Errorf("cmd.group: got %q, want CI", cmd.Group)
+	if task.Dir != "/tmp" {
+		t.Errorf("task.dir: got %q", task.Dir)
+	}
+	if task.RunMode != config.RunModeStream {
+		t.Errorf("task.run_mode: got %q, want stream", task.RunMode)
+	}
+	if task.Group != "CI" {
+		t.Errorf("task.group: got %q, want CI", task.Group)
 	}
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
 
 func TestLoad_DefaultTitle(t *testing.T) {
-	cfg, err := config.Load(writeTemp(t, "commands: []"))
+	cfg, err := config.Load(writeTemp(t, "tasks: []"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,7 +93,7 @@ func TestLoad_DefaultTitle(t *testing.T) {
 }
 
 func TestLoad_DefaultRunMode(t *testing.T) {
-	cfg, err := config.Load(writeTemp(t, "commands: []"))
+	cfg, err := config.Load(writeTemp(t, "tasks: []"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,50 +102,55 @@ func TestLoad_DefaultRunMode(t *testing.T) {
 	}
 }
 
-func TestLoad_CommandInheritsTopLevelRunMode(t *testing.T) {
+func TestLoad_TaskInheritsTopLevelRunMode(t *testing.T) {
 	yaml := `
 run_mode: background
-commands:
+tasks:
   - name: Test
-    command: "echo hi"
+    actions:
+      - command: "echo hi"
 `
 	cfg, err := config.Load(writeTemp(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Commands[0].RunMode != config.RunModeBackground {
-		t.Errorf("inherited run_mode: got %q, want background", cfg.Commands[0].RunMode)
+	if cfg.Tasks[0].RunMode != config.RunModeBackground {
+		t.Errorf("inherited run_mode: got %q, want background", cfg.Tasks[0].RunMode)
 	}
 }
 
-func TestLoad_CommandRunModeNotOverriddenWhenExplicit(t *testing.T) {
+func TestLoad_TaskRunModeNotOverriddenWhenExplicit(t *testing.T) {
 	yaml := `
 run_mode: stream
-commands:
+tasks:
   - name: Deploy
-    command: "make deploy"
+    actions:
+      - command: "make deploy"
     run_mode: handoff
 `
 	cfg, err := config.Load(writeTemp(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Commands[0].RunMode != config.RunModeHandoff {
-		t.Errorf("explicit run_mode: got %q, want handoff", cfg.Commands[0].RunMode)
+	if cfg.Tasks[0].RunMode != config.RunModeHandoff {
+		t.Errorf("explicit run_mode: got %q, want handoff", cfg.Tasks[0].RunMode)
 	}
 }
 
-func TestLoad_MultipleCommandsInheritance(t *testing.T) {
+func TestLoad_MultipleTasksInheritance(t *testing.T) {
 	yaml := `
 run_mode: background
-commands:
+tasks:
   - name: A
-    command: echo a
+    actions:
+      - command: echo a
   - name: B
-    command: echo b
+    actions:
+      - command: echo b
     run_mode: stream
   - name: C
-    command: echo c
+    actions:
+      - command: echo c
 `
 	cfg, err := config.Load(writeTemp(t, yaml))
 	if err != nil {
@@ -152,29 +165,29 @@ commands:
 		{2, config.RunModeBackground},
 	}
 	for _, tc := range cases {
-		if got := cfg.Commands[tc.idx].RunMode; got != tc.want {
-			t.Errorf("commands[%d].run_mode: got %q, want %q", tc.idx, got, tc.want)
+		if got := cfg.Tasks[tc.idx].RunMode; got != tc.want {
+			t.Errorf("tasks[%d].run_mode: got %q, want %q", tc.idx, got, tc.want)
 		}
 	}
 }
 
-func TestLoad_EmptyCommandList(t *testing.T) {
-	cfg, err := config.Load(writeTemp(t, "commands: []"))
+func TestLoad_EmptyTaskList(t *testing.T) {
+	cfg, err := config.Load(writeTemp(t, "tasks: []"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cfg.Commands) != 0 {
-		t.Errorf("expected empty commands, got %d", len(cfg.Commands))
+	if len(cfg.Tasks) != 0 {
+		t.Errorf("expected empty tasks, got %d", len(cfg.Tasks))
 	}
 }
 
-func TestLoad_NoCommandsKey(t *testing.T) {
+func TestLoad_NoTasksKey(t *testing.T) {
 	cfg, err := config.Load(writeTemp(t, "title: bare"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Commands != nil {
-		t.Errorf("expected nil commands, got %v", cfg.Commands)
+	if cfg.Tasks != nil {
+		t.Errorf("expected nil tasks, got %v", cfg.Tasks)
 	}
 }
 
@@ -194,11 +207,11 @@ func TestLoad_InvalidYAML(t *testing.T) {
 	}
 }
 
-func TestLoad_MalformedCommands(t *testing.T) {
-	// commands should be a list, not a string — YAML should error
-	_, err := config.Load(writeTemp(t, "commands: not-a-list"))
+func TestLoad_MalformedTasks(t *testing.T) {
+	// tasks should be a list, not a string — YAML should error
+	_, err := config.Load(writeTemp(t, "tasks: not-a-list"))
 	if err == nil {
-		t.Fatal("expected error for malformed commands, got nil")
+		t.Fatal("expected error for malformed tasks, got nil")
 	}
 }
 
@@ -219,101 +232,93 @@ func TestConstants(t *testing.T) {
 
 // ── Optional fields ───────────────────────────────────────────────────────────
 
-func TestLoad_CommandOptionalFields(t *testing.T) {
+func TestLoad_TaskOptionalFields(t *testing.T) {
 	yaml := `
-commands:
+tasks:
   - name: Minimal
-    command: echo hi
+    actions:
+      - command: echo hi
 `
 	cfg, err := config.Load(writeTemp(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	cmd := cfg.Commands[0]
-	if cmd.Dir != "" {
-		t.Errorf("dir should default empty, got %q", cmd.Dir)
+	task := cfg.Tasks[0]
+	if task.Dir != "" {
+		t.Errorf("dir should default empty, got %q", task.Dir)
 	}
-	if cmd.Group != "" {
-		t.Errorf("group should default empty, got %q", cmd.Group)
+	if task.Group != "" {
+		t.Errorf("group should default empty, got %q", task.Group)
 	}
-	if cmd.Description != "" {
-		t.Errorf("description should default empty, got %q", cmd.Description)
-	}
-}
-
-// ── Multi-command (Steps) ────────────────────────────────────────────────────
-
-func TestCommand_Steps_SingleCommand(t *testing.T) {
-	cmd := config.Command{Command: "echo hi"}
-	steps := cmd.AllSteps()
-	if len(steps) != 1 || steps[0] != "echo hi" {
-		t.Errorf("Steps(): got %v, want [echo hi]", steps)
+	if task.Description != "" {
+		t.Errorf("description should default empty, got %q", task.Description)
 	}
 }
 
-func TestCommand_Steps_MultipleCommands(t *testing.T) {
-	cmd := config.Command{Commands: []string{"cd app", "npm run dev"}}
-	steps := cmd.AllSteps()
-	if len(steps) != 2 {
-		t.Fatalf("Steps() len: got %d, want 2", len(steps))
-	}
-	if steps[0] != "cd app" || steps[1] != "npm run dev" {
-		t.Errorf("Steps(): got %v", steps)
+// ── Multi-action (Actions) ────────────────────────────────────────────────────
+
+func TestTask_Actions_SingleAction(t *testing.T) {
+	task := config.Task{Actions: []config.Action{{Command: "echo hi"}}}
+	cmds := task.AllCommands()
+	if len(cmds) != 1 || cmds[0] != "echo hi" {
+		t.Errorf("AllCommands(): got %v, want [echo hi]", cmds)
 	}
 }
 
-func TestCommand_Steps_CommandsFieldTakesPrecedence(t *testing.T) {
-	// When both Command and Commands are set, Commands wins.
-	cmd := config.Command{
-		Command:  "single",
-		Commands: []string{"first", "second"},
+func TestTask_Actions_MultipleActions(t *testing.T) {
+	task := config.Task{Actions: []config.Action{
+		{Command: "cd app"},
+		{Command: "npm run dev"},
+	}}
+	cmds := task.AllCommands()
+	if len(cmds) != 2 {
+		t.Fatalf("AllCommands() len: got %d, want 2", len(cmds))
 	}
-	steps := cmd.AllSteps()
-	if len(steps) != 2 || steps[0] != "first" {
-		t.Errorf("Steps() should use Commands when both set: got %v", steps)
-	}
-}
-
-func TestCommand_Steps_Empty(t *testing.T) {
-	cmd := config.Command{}
-	steps := cmd.AllSteps()
-	if len(steps) != 0 {
-		t.Errorf("Steps() on empty command: got %v, want []", steps)
+	if cmds[0] != "cd app" || cmds[1] != "npm run dev" {
+		t.Errorf("AllCommands(): got %v", cmds)
 	}
 }
 
-func TestLoad_MultiCommandField(t *testing.T) {
+func TestTask_Actions_Empty(t *testing.T) {
+	task := config.Task{}
+	cmds := task.AllCommands()
+	if len(cmds) != 0 {
+		t.Errorf("AllCommands() on empty task: got %v, want []", cmds)
+	}
+}
+
+func TestLoad_MultipleActions(t *testing.T) {
 	yaml := `
-commands:
+tasks:
   - name: Setup
-    commands:
-      - "cd app"
-      - "npm install"
-      - "npm run dev"
+    actions:
+      - command: "cd app"
+      - command: "npm install"
+      - command: "npm run dev"
 `
 	cfg, err := config.Load(writeTemp(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cfg.Commands) != 1 {
-		t.Fatalf("commands: got %d, want 1", len(cfg.Commands))
+	if len(cfg.Tasks) != 1 {
+		t.Fatalf("tasks: got %d, want 1", len(cfg.Tasks))
 	}
-	steps := cfg.Commands[0].AllSteps()
-	if len(steps) != 3 {
-		t.Fatalf("Steps() len: got %d, want 3", len(steps))
+	cmds := cfg.Tasks[0].AllCommands()
+	if len(cmds) != 3 {
+		t.Fatalf("AllCommands() len: got %d, want 3", len(cmds))
 	}
-	if steps[0] != "cd app" || steps[1] != "npm install" || steps[2] != "npm run dev" {
-		t.Errorf("Steps(): got %v", steps)
+	if cmds[0] != "cd app" || cmds[1] != "npm install" || cmds[2] != "npm run dev" {
+		t.Errorf("AllCommands(): got %v", cmds)
 	}
 }
 
-func TestLoad_MultiCommand_RoundTrip(t *testing.T) {
+func TestLoad_MultipleActions_RoundTrip(t *testing.T) {
 	path := writeTemp(t, `
-commands:
+tasks:
   - name: Multi
-    commands:
-      - echo one
-      - echo two
+    actions:
+      - command: echo one
+      - command: echo two
     run_mode: stream
 `)
 	cfg, err := config.Load(path)
@@ -330,8 +335,8 @@ commands:
 		t.Fatalf("reload: %v", err)
 	}
 
-	steps := reloaded.Commands[0].AllSteps()
-	if len(steps) != 2 || steps[0] != "echo one" || steps[1] != "echo two" {
-		t.Errorf("round-trip Steps(): got %v", steps)
+	cmds := reloaded.Tasks[0].AllCommands()
+	if len(cmds) != 2 || cmds[0] != "echo one" || cmds[1] != "echo two" {
+		t.Errorf("round-trip AllCommands(): got %v", cmds)
 	}
 }

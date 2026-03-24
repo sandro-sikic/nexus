@@ -148,8 +148,8 @@ type WizardModel struct {
 	cmdGroup         string
 	cmdRunMode       config.RunMode // "" means "inherit"
 
-	// accumulated commands
-	commands []config.Command
+	// accumulated tasks
+	tasks []config.Task
 
 	// hub / delete step: parallel bool slice — true means "mark for deletion"
 	deleteMarks []bool
@@ -180,12 +180,12 @@ func NewWizardFromConfig(savePath string, cfg *config.Config) WizardModel {
 	m.cfgTitle = cfg.Title
 	m.cfgRunMode = cfg.RunMode
 
-	// Deep-copy commands.
-	m.commands = make([]config.Command, len(cfg.Commands))
-	copy(m.commands, cfg.Commands)
+	// Deep-copy tasks.
+	m.tasks = make([]config.Task, len(cfg.Tasks))
+	copy(m.tasks, cfg.Tasks)
 
 	// Initialise delete marks (all false).
-	m.deleteMarks = make([]bool, len(m.commands))
+	m.deleteMarks = make([]bool, len(m.tasks))
 
 	return m
 }
@@ -207,9 +207,9 @@ func (m WizardModel) Saved() bool { return m.saved }
 
 func (m WizardModel) buildConfig() *config.Config {
 	return &config.Config{
-		Title:    m.cfgTitle,
-		RunMode:  m.cfgRunMode,
-		Commands: m.commands,
+		Title:   m.cfgTitle,
+		RunMode: m.cfgRunMode,
+		Tasks:   m.tasks,
 	}
 }
 
@@ -293,7 +293,7 @@ func (m WizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHubKey(msg)
 	}
 
-	// ── Delete-commands step (create flow) ────────────────────────────────
+	// ── Delete-tasks step (create flow) ──────────────────────────────────
 	if m.step == wizStepDeleteCmds {
 		switch msg.Type {
 		case tea.KeyUp:
@@ -302,7 +302,7 @@ func (m WizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.validErr = ""
 			}
 		case tea.KeyDown:
-			if m.optCursor < len(m.commands)-1 {
+			if m.optCursor < len(m.tasks)-1 {
 				m.optCursor++
 				m.validErr = ""
 			}
@@ -370,7 +370,7 @@ func (m WizardModel) handleHubKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyDown:
-		if m.optCursor < len(m.commands)-1 {
+		if m.optCursor < len(m.tasks)-1 {
 			m.optCursor++
 			m.validErr = ""
 		}
@@ -386,7 +386,7 @@ func (m WizardModel) handleHubKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 
 		case "d", "D":
-			// Delete all marked commands.
+			// Delete all marked tasks.
 			markedCount := 0
 			for _, marked := range m.deleteMarks {
 				if marked {
@@ -394,24 +394,24 @@ func (m WizardModel) handleHubKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if markedCount == 0 {
-				m.validErr = "No commands marked for deletion"
+				m.validErr = "No tasks marked for deletion"
 				return m, nil
 			}
-			if markedCount == len(m.commands) {
-				m.validErr = "At least one command must remain"
+			if markedCount == len(m.tasks) {
+				m.validErr = "At least one task must remain"
 				return m, nil
 			}
-			kept := m.commands[:0:0]
-			for i, cmd := range m.commands {
+			kept := m.tasks[:0:0]
+			for i, task := range m.tasks {
 				if !m.deleteMarks[i] {
-					kept = append(kept, cmd)
+					kept = append(kept, task)
 				}
 			}
-			m.commands = kept
-			m.deleteMarks = make([]bool, len(m.commands))
+			m.tasks = kept
+			m.deleteMarks = make([]bool, len(m.tasks))
 			// Keep cursor in bounds.
-			if m.optCursor >= len(m.commands) {
-				m.optCursor = max(0, len(m.commands)-1)
+			if m.optCursor >= len(m.tasks) {
+				m.optCursor = max(0, len(m.tasks)-1)
 			}
 			m.validErr = ""
 
@@ -423,7 +423,7 @@ func (m WizardModel) handleHubKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.step = wizStepTitle
 
 		case "a", "A":
-			// Add a new command: go to CmdName step, return to hub after RunMode.
+			// Add a new task: go to CmdName step, return to hub after RunMode.
 			m.returnToHub = true
 			m.resetCmdFields()
 			m.optCursor = 0
@@ -474,24 +474,24 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 			m.step = wizStepCmdName
 		}
 
-	// ── Command: name ─────────────────────────────────────────────────────
+	// ── Task: name ─────────────────────────────────────────────────────
 	case wizStepCmdName:
 		name := strings.TrimSpace(m.inputBuf)
 		if name == "" {
-			m.validErr = "Command name is required"
+			m.validErr = "Task name is required"
 			return m, nil
 		}
 		m.cmdName = name
 		m.inputBuf = ""
 		m.step = wizStepCmdDesc
 
-	// ── Command: description (optional) ──────────────────────────────────
+	// ── Task: description (optional) ──────────────────────────────────
 	case wizStepCmdDesc:
 		m.cmdDesc = strings.TrimSpace(m.inputBuf)
 		m.inputBuf = ""
 		m.step = wizStepCmdCommand
 
-	// ── Command: shell command ────────────────────────────────────────────
+	// ── Task: shell command (first action) ────────────────────────────────
 	case wizStepCmdCommand:
 		command := strings.TrimSpace(m.inputBuf)
 		if command == "" {
@@ -503,7 +503,7 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 		m.inputBuf = ""
 		m.step = wizStepCmdMoreCommands
 
-	// ── Command: additional shell commands (optional, repeating) ──────────
+	// ── Task: additional shell commands (optional, repeating) ──────────
 	case wizStepCmdMoreCommands:
 		extra := strings.TrimSpace(m.inputBuf)
 		m.inputBuf = ""
@@ -514,29 +514,29 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 			// Stay on this step so the user can add another.
 		}
 
-	// ── Command: working directory (optional) ────────────────────────────
+	// ── Task: working directory (optional) ────────────────────────────
 	case wizStepCmdDir:
 		m.cmdDir = strings.TrimSpace(m.inputBuf)
 		m.inputBuf = ""
 		m.step = wizStepCmdGroup
 
-	// ── Command: group (optional) ────────────────────────────────────────
+	// ── Task: group (optional) ────────────────────────────────────────
 	case wizStepCmdGroup:
 		m.cmdGroup = strings.TrimSpace(m.inputBuf)
 		m.inputBuf = ""
 		m.optCursor = 0
 		m.step = wizStepCmdRunMode
 
-	// ── Command: per-command run mode override ────────────────────────────
+	// ── Task: per-task run mode override ────────────────────────────
 	case wizStepCmdRunMode:
 		m.cmdRunMode = config.RunMode(cmdRunModeOptions[m.optCursor].value)
-		m.commitCommand()
+		m.commitTask()
 		m.optCursor = 0
 		if m.returnToHub {
-			// Back to hub after adding a new command.
+			// Back to hub after adding a new task.
 			m.returnToHub = false
-			// Grow deleteMarks to cover the newly added command.
-			m.deleteMarks = make([]bool, len(m.commands))
+			// Grow deleteMarks to cover the newly added task.
+			m.deleteMarks = make([]bool, len(m.tasks))
 			m.step = wizStepEditHub
 		} else {
 			m.step = wizStepAddAnother
@@ -549,12 +549,12 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 			m.optCursor = 0
 			m.step = wizStepCmdName
 		} else {
-			m.deleteMarks = make([]bool, len(m.commands))
+			m.deleteMarks = make([]bool, len(m.tasks))
 			m.optCursor = 0
 			m.step = wizStepDeleteCmds
 		}
 
-	// ── Delete commands (create flow only) ────────────────────────────────
+	// ── Delete tasks (create flow only) ────────────────────────────────
 	case wizStepDeleteCmds:
 		markedCount := 0
 		for _, marked := range m.deleteMarks {
@@ -562,18 +562,18 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 				markedCount++
 			}
 		}
-		if markedCount == len(m.commands) {
-			m.validErr = "At least one command must remain"
+		if markedCount == len(m.tasks) {
+			m.validErr = "At least one task must remain"
 			return m, nil
 		}
 		if markedCount > 0 {
-			kept := m.commands[:0:0]
-			for i, cmd := range m.commands {
+			kept := m.tasks[:0:0]
+			for i, task := range m.tasks {
 				if !m.deleteMarks[i] {
-					kept = append(kept, cmd)
+					kept = append(kept, task)
 				}
 			}
-			m.commands = kept
+			m.tasks = kept
 		}
 		m.deleteMarks = nil
 		m.validErr = ""
@@ -664,22 +664,25 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 		m.optCursor = 0
 		m.step = wizStepCmdGroup
 
-	// ── AddAnother → CmdRunMode (restore command fields, un-commit last cmd) ──
+	// ── AddAnother → CmdRunMode (restore task fields, un-commit last task) ──
 	case wizStepAddAnother:
-		if len(m.commands) > 0 {
-			last := m.commands[len(m.commands)-1]
-			m.commands = m.commands[:len(m.commands)-1]
+		if len(m.tasks) > 0 {
+			last := m.tasks[len(m.tasks)-1]
+			m.tasks = m.tasks[:len(m.tasks)-1]
 			m.cmdName = last.Name
 			m.cmdDesc = last.Description
 			m.cmdDir = last.Dir
 			m.cmdGroup = last.Group
 			m.cmdRunMode = last.RunMode
-			steps := last.AllSteps()
-			if len(steps) > 0 {
-				m.cmdCommand = steps[0]
+			// Restore actions as commands
+			if len(last.Actions) > 0 {
+				m.cmdCommand = last.Actions[0].Command
 			}
-			if len(steps) > 1 {
-				m.cmdExtraCommands = steps[1:]
+			if len(last.Actions) > 1 {
+				m.cmdExtraCommands = make([]string, 0, len(last.Actions)-1)
+				for i := 1; i < len(last.Actions); i++ {
+					m.cmdExtraCommands = append(m.cmdExtraCommands, last.Actions[i].Command)
+				}
 			}
 		}
 		m.inputBuf = ""
@@ -693,12 +696,12 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 		m.optCursor = 0
 		m.step = wizStepAddAnother
 
-	// ── Summary → DeleteCmds (or AddAnother if single command) ──────────
+	// ── Summary → DeleteCmds (or AddAnother if single task) ──────────
 	case wizStepSummary:
 		m.inputBuf = ""
 		m.optCursor = 0
-		if len(m.commands) > 1 {
-			m.deleteMarks = make([]bool, len(m.commands))
+		if len(m.tasks) > 1 {
+			m.deleteMarks = make([]bool, len(m.tasks))
 			m.step = wizStepDeleteCmds
 		} else {
 			m.step = wizStepAddAnother
@@ -712,25 +715,28 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// commitCommand appends the command being built to m.commands.
-func (m *WizardModel) commitCommand() {
+// commitTask appends the task being built to m.tasks.
+func (m *WizardModel) commitTask() {
 	rm := m.cmdRunMode
 	if rm == "" {
 		rm = m.cfgRunMode
 	}
-	cmd := config.Command{
+	// Build actions from commands
+	actions := []config.Action{
+		{Command: m.cmdCommand, Background: false},
+	}
+	for _, cmd := range m.cmdExtraCommands {
+		actions = append(actions, config.Action{Command: cmd, Background: false})
+	}
+	task := config.Task{
 		Name:        m.cmdName,
 		Description: m.cmdDesc,
 		Dir:         m.cmdDir,
 		Group:       m.cmdGroup,
 		RunMode:     rm,
+		Actions:     actions,
 	}
-	if len(m.cmdExtraCommands) > 0 {
-		cmd.Commands = append([]string{m.cmdCommand}, m.cmdExtraCommands...)
-	} else {
-		cmd.Command = m.cmdCommand
-	}
-	m.commands = append(m.commands, cmd)
+	m.tasks = append(m.tasks, task)
 }
 
 // resetCmdFields clears the per-command scratch space.
@@ -769,21 +775,21 @@ func (m WizardModel) View() string {
 		)
 	case wizStepCmdName:
 		return m.viewTextInput(
-			fmt.Sprintf("Command #%d — Name", len(m.commands)+1),
-			"A short display name for this command.",
+			fmt.Sprintf("Task #%d — Name", len(m.tasks)+1),
+			"A short display name for this task.",
 			"e.g. Dev Server",
 			false,
 		)
 	case wizStepCmdDesc:
 		return m.viewTextInput(
-			fmt.Sprintf("Command #%d — Description", len(m.commands)+1),
+			fmt.Sprintf("Task #%d — Description", len(m.tasks)+1),
 			"Optional longer description shown next to the name.",
 			"e.g. Start the dev server with hot reload  (leave blank to skip)",
 			true,
 		)
 	case wizStepCmdCommand:
 		return m.viewTextInput(
-			fmt.Sprintf("Command #%d — Shell Command", len(m.commands)+1),
+			fmt.Sprintf("Task #%d — Shell Command", len(m.tasks)+1),
 			"The first (or only) shell command to execute.",
 			"e.g. npm run dev",
 			false,
@@ -792,28 +798,28 @@ func (m WizardModel) View() string {
 		return m.viewMoreCommands()
 	case wizStepCmdDir:
 		return m.viewTextInput(
-			fmt.Sprintf("Command #%d — Working Directory", len(m.commands)+1),
+			fmt.Sprintf("Task #%d — Working Directory", len(m.tasks)+1),
 			"Optional working directory (leave blank for CWD).",
 			"e.g. ./frontend",
 			true,
 		)
 	case wizStepCmdGroup:
 		return m.viewTextInput(
-			fmt.Sprintf("Command #%d — Group", len(m.commands)+1),
+			fmt.Sprintf("Task #%d — Group", len(m.tasks)+1),
 			"Group label for display grouping (leave blank for \"General\").",
 			"e.g. Development",
 			true,
 		)
 	case wizStepCmdRunMode:
 		return m.viewOptionPicker(
-			fmt.Sprintf("Command #%d — Run Mode", len(m.commands)+1),
-			"Override the default run mode for this command, or inherit it.",
+			fmt.Sprintf("Task #%d — Run Mode", len(m.tasks)+1),
+			"Override the default run mode for this task, or inherit it.",
 			cmdRunModeOptions,
 		)
 	case wizStepAddAnother:
 		return m.viewOptionPicker(
-			"Add Another Command?",
-			fmt.Sprintf("%d command(s) added so far.", len(m.commands)),
+			"Add Another Task?",
+			fmt.Sprintf("%d task(s) added so far.", len(m.tasks)),
 			addAnotherOptions,
 		)
 	case wizStepDeleteCmds:
@@ -854,12 +860,12 @@ func (m WizardModel) viewEditHub() string {
 	b.WriteString(wizDimStyle.Render("    run_mode  ") + wizValueStyle.Render(string(m.cfgRunMode)) + "\n")
 	b.WriteString("\n")
 
-	// ── Command list with delete checkboxes ───────────────────────────────
-	b.WriteString(wizLabelStyle.Render("  Commands") + "\n")
-	if len(m.commands) == 0 {
-		b.WriteString("  " + wizDimStyle.Render("(no commands yet)") + "\n")
+	// ── Task list with delete checkboxes ───────────────────────────────
+	b.WriteString(wizLabelStyle.Render("  Tasks") + "\n")
+	if len(m.tasks) == 0 {
+		b.WriteString("  " + wizDimStyle.Render("(no tasks yet)") + "\n")
 	} else {
-		for i, cmd := range m.commands {
+		for i, task := range m.tasks {
 			cursor := "   "
 			if i == m.optCursor {
 				cursor = "  " + wizCursorStyle.Render("▶")
@@ -872,19 +878,19 @@ func (m WizardModel) viewEditHub() string {
 				checkbox = wizDimStyle.Render("[ ]")
 			}
 
-			name := cmd.Name
+			name := task.Name
 			if i == m.optCursor {
 				name = wizSelectedOptStyle.Render(name)
 			} else {
 				name = wizOptStyle.Render(name)
 			}
 
-			steps := cmd.AllSteps()
+			// Build preview from actions
 			var cmdPreview string
-			if len(steps) == 1 {
-				cmdPreview = wizDimStyle.Render("  $ " + steps[0])
-			} else if len(steps) > 1 {
-				cmdPreview = wizDimStyle.Render(fmt.Sprintf("  $ %s  (+%d more)", steps[0], len(steps)-1))
+			if len(task.Actions) == 1 {
+				cmdPreview = wizDimStyle.Render("  $ " + task.Actions[0].Command)
+			} else if len(task.Actions) > 1 {
+				cmdPreview = wizDimStyle.Render(fmt.Sprintf("  $ %s  (+%d more)", task.Actions[0].Command, len(task.Actions)-1))
 			}
 
 			b.WriteString(fmt.Sprintf("%s %s %s%s\n", cursor, checkbox, name, cmdPreview))
@@ -898,12 +904,12 @@ func (m WizardModel) viewEditHub() string {
 	// ── Action menu ───────────────────────────────────────────────────────
 	b.WriteString("\n" + wizSeparator + "\n")
 	b.WriteString(wizLabelStyle.Render("  Actions") + "\n")
-	b.WriteString("  " + wizActionKeyStyle.Render("[space]") + "  " + wizActionStyle.Render("toggle delete mark on selected command") + "\n")
-	b.WriteString("  " + wizActionKeyStyle.Render("[d]    ") + "  " + wizActionStyle.Render("delete all marked commands") + "\n")
+	b.WriteString("  " + wizActionKeyStyle.Render("[space]") + "  " + wizActionStyle.Render("toggle delete mark on selected task") + "\n")
+	b.WriteString("  " + wizActionKeyStyle.Render("[d]    ") + "  " + wizActionStyle.Render("delete all marked tasks") + "\n")
 	b.WriteString("  " + wizActionKeyStyle.Render("[e]    ") + "  " + wizActionStyle.Render("edit general settings  (title / run_mode)") + "\n")
-	b.WriteString("  " + wizActionKeyStyle.Render("[a]    ") + "  " + wizActionStyle.Render("add a new command") + "\n")
+	b.WriteString("  " + wizActionKeyStyle.Render("[a]    ") + "  " + wizActionStyle.Render("add a new task") + "\n")
 	b.WriteString("  " + wizActionKeyStyle.Render("[s]    ") + "  " + wizActionStyle.Render("save & exit") + "\n")
-	b.WriteString(wizHelpStyle.Render("\n  ↑/↓ navigate commands  •  ctrl+c abort"))
+	b.WriteString(wizHelpStyle.Render("\n  ↑/↓ navigate tasks  •  ctrl+c abort"))
 
 	return b.String()
 }
@@ -939,9 +945,9 @@ func (m WizardModel) viewTextInput(title, hint, placeholder string, optional boo
 
 func (m WizardModel) viewMoreCommands() string {
 	var b strings.Builder
-	idx := len(m.commands) + 1
-	stepNum := len(m.cmdExtraCommands) + 2 // first command is step 1
-	b.WriteString(wizTitleStyle.Render(fmt.Sprintf("Nexus — Command #%d — Step %d", idx, stepNum)) + "\n")
+	idx := len(m.tasks) + 1
+	stepNum := len(m.cmdExtraCommands) + 2 // first action is step 1
+	b.WriteString(wizTitleStyle.Render(fmt.Sprintf("Nexus — Task #%d — Action %d", idx, stepNum)) + "\n")
 	b.WriteString(wizSeparator + "\n\n")
 
 	b.WriteString("  " + wizSubtitleStyle.Render("Commands added so far:") + "\n")
@@ -1000,11 +1006,11 @@ func (m WizardModel) viewOptionPicker(title, hint string, opts []wizOption) stri
 
 func (m WizardModel) viewDeleteCmds() string {
 	var b strings.Builder
-	b.WriteString(wizTitleStyle.Render("Nexus — Delete Commands") + "\n")
+	b.WriteString(wizTitleStyle.Render("Nexus — Delete Tasks") + "\n")
 	b.WriteString(wizSeparator + "\n\n")
-	b.WriteString("  " + wizSubtitleStyle.Render("Mark commands to delete, then press enter to confirm.\n  At least one command must remain.") + "\n\n")
+	b.WriteString("  " + wizSubtitleStyle.Render("Mark tasks to delete, then press enter to confirm.\n  At least one task must remain.") + "\n\n")
 
-	for i, cmd := range m.commands {
+	for i, task := range m.tasks {
 		cursor := "  "
 		if i == m.optCursor {
 			cursor = wizCursorStyle.Render("▶ ")
@@ -1017,7 +1023,7 @@ func (m WizardModel) viewDeleteCmds() string {
 			checkbox = wizDimStyle.Render("[ ]")
 		}
 
-		name := cmd.Name
+		name := task.Name
 		if i == m.optCursor {
 			name = wizSelectedOptStyle.Render(name)
 		} else {
@@ -1025,8 +1031,8 @@ func (m WizardModel) viewDeleteCmds() string {
 		}
 
 		desc := ""
-		if cmd.Description != "" {
-			desc = "  " + wizDimStyle.Render(cmd.Description)
+		if task.Description != "" {
+			desc = "  " + wizDimStyle.Render(task.Description)
 		}
 
 		b.WriteString(fmt.Sprintf("  %s%s %s%s\n", cursor, checkbox, name, desc))
@@ -1050,28 +1056,27 @@ func (m WizardModel) viewSummary() string {
 	b.WriteString(wizLabelStyle.Render("  Run Mode   ") + wizValueStyle.Render(string(m.cfgRunMode)) + "\n")
 	b.WriteString("\n")
 
-	for i, c := range m.commands {
-		b.WriteString(wizLabelStyle.Render(fmt.Sprintf("  Command #%d", i+1)) + "\n")
-		b.WriteString(wizDimStyle.Render("    name     ") + wizValueStyle.Render(c.Name) + "\n")
-		if c.Description != "" {
-			b.WriteString(wizDimStyle.Render("    desc     ") + wizValueStyle.Render(c.Description) + "\n")
+	for i, t := range m.tasks {
+		b.WriteString(wizLabelStyle.Render(fmt.Sprintf("  Task #%d", i+1)) + "\n")
+		b.WriteString(wizDimStyle.Render("    name     ") + wizValueStyle.Render(t.Name) + "\n")
+		if t.Description != "" {
+			b.WriteString(wizDimStyle.Render("    desc     ") + wizValueStyle.Render(t.Description) + "\n")
 		}
-		steps := c.AllSteps()
-		if len(steps) == 1 {
-			b.WriteString(wizDimStyle.Render("    command  ") + wizValueStyle.Render(steps[0]) + "\n")
+		if len(t.Actions) == 1 {
+			b.WriteString(wizDimStyle.Render("    command  ") + wizValueStyle.Render(t.Actions[0].Command) + "\n")
 		} else {
 			b.WriteString(wizDimStyle.Render("    commands ") + "\n")
-			for j, step := range steps {
-				b.WriteString(wizDimStyle.Render(fmt.Sprintf("      %d. ", j+1)) + wizValueStyle.Render(step) + "\n")
+			for j, action := range t.Actions {
+				b.WriteString(wizDimStyle.Render(fmt.Sprintf("      %d. ", j+1)) + wizValueStyle.Render(action.Command) + "\n")
 			}
 		}
-		if c.Dir != "" {
-			b.WriteString(wizDimStyle.Render("    dir      ") + wizValueStyle.Render(c.Dir) + "\n")
+		if t.Dir != "" {
+			b.WriteString(wizDimStyle.Render("    dir      ") + wizValueStyle.Render(t.Dir) + "\n")
 		}
-		if c.Group != "" {
-			b.WriteString(wizDimStyle.Render("    group    ") + wizValueStyle.Render(c.Group) + "\n")
+		if t.Group != "" {
+			b.WriteString(wizDimStyle.Render("    group    ") + wizValueStyle.Render(t.Group) + "\n")
 		}
-		b.WriteString(wizDimStyle.Render("    run_mode ") + wizValueStyle.Render(string(c.RunMode)) + "\n")
+		b.WriteString(wizDimStyle.Render("    run_mode ") + wizValueStyle.Render(string(t.RunMode)) + "\n")
 		b.WriteString("\n")
 	}
 

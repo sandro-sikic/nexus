@@ -2,98 +2,105 @@
 #
 # run_mode: stream | handoff | background
 #
-# Per-command run_mode overrides the top-level default.
+# Per-task run_mode overrides the top-level default.
 #
-# Multi-step commands: use "commands" (list) instead of "command" (string)
-# to run several shell commands sequentially. Execution stops on first failure.
+# Actions: use the "actions" field to define a list of commands to execute.
+# Each action can have:
+#   - command: the shell command to run (required)
+#   - background: true/false - whether to run in background (optional)
+# Actions execute sequentially. Execution stops on first failure.
+# Background actions continue running while foreground actions execute.
 #
-# For more advanced multi-step commands with background support, use "steps":
-#   steps:
-#     - command: "npm run dev"
-#       background: true    # This runs in the background
-#     - command: "npx playwright codegen"  # This runs in foreground
-# Background steps continue running while foreground steps execute sequentially.
-#
-# group: optional label — commands with the same group are shown together.
+# group: optional label — tasks with the same group are shown together.
 
 title: "My Project Nexus"
 run_mode: stream      # default: stream output inside the TUI
 
-commands:
+tasks:
   # ── Development ──────────────────────────────────────────
   - name: Dev Server
     description: Start the development server with hot reload
-    command: "npm run dev"
+    actions:
+      - command: "npm run dev"
     group: Development
     run_mode: handoff   # hand off terminal; Ctrl+C works normally
 
   - name: Setup and Dev
     description: Install deps then start the dev server
-    commands:
-      - "npm install"
-      - "npm run dev"
+    actions:
+      - command: "npm install"
+      - command: "npm run dev"
     group: Development
     run_mode: handoff
 
   - name: Watch Tests
     description: Run tests in watch mode
-    command: "npm run test:watch"
+    actions:
+      - command: "npm run test:watch"
     group: Development
     run_mode: stream
 
   - name: Type Check
     description: Run TypeScript type checker
-    command: "npm run typecheck"
+    actions:
+      - command: "npm run typecheck"
     group: Development
 
   # ── Build ────────────────────────────────────────────────
   - name: Build
     description: Production build
-    command: "npm run build"
+    actions:
+      - command: "npm run build"
     group: Build
 
   - name: Preview
     description: Preview the production build locally
-    command: "npm run preview"
+    actions:
+      - command: "npm run preview"
     group: Build
     run_mode: handoff
 
   # ── Quality ──────────────────────────────────────────────
   - name: Lint
     description: Run ESLint across the project
-    command: "npm run lint"
+    actions:
+      - command: "npm run lint"
     group: Quality
 
   - name: Format
     description: Format code with Prettier
-    command: "npm run format"
+    actions:
+      - command: "npm run format"
     group: Quality
 
   # ── Utilities ────────────────────────────────────────────
   - name: Install Deps
     description: Install / update npm dependencies
-    command: "npm install"
+    actions:
+      - command: "npm install"
     group: Utilities
 
   - name: Clean
     description: Remove build artifacts and node_modules
-    command: "rm -rf dist node_modules"
+    actions:
+      - command: "rm -rf dist node_modules"
     group: Utilities
 
   - name: Background Logger
     description: Demo background process (pings localhost)
-    command: "ping -n 10 127.0.0.1"
+    actions:
+      - command: "ping -n 10 127.0.0.1"
     group: Utilities
     run_mode: background
 
   # ── Mixed Foreground/Background ──────────────────────────
-  # Use the "steps" field to run some commands in the background
-  # while others run in the foreground.
-  # Background steps continue running while foreground steps execute.
-  
+  # Use the "actions" field with background: true to run some commands
+  # in the background while others run in the foreground.
+  # Background actions continue running while foreground actions execute.
+
   - name: Dev Server + Playwright
     description: Start dev server in background, then run playwright codegen
-    steps:
+    actions:
       - command: "npm run dev"
         background: true
       - command: "npx playwright codegen"

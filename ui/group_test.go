@@ -10,25 +10,29 @@ import (
 
 // helpers ─────────────────────────────────────────────────────────────────────
 
-func groupCfg(cmds ...config.Command) *config.Config {
+func groupCfg(tasks ...config.Task) *config.Config {
 	return &config.Config{
-		Title:    "Group Test",
-		RunMode:  config.RunModeStream,
-		Commands: cmds,
+		Title:   "Group Test",
+		RunMode: config.RunModeStream,
+		Tasks:   tasks,
 	}
 }
 
-func gcmd(name, command, group string) config.Command {
-	return config.Command{Name: name, Command: command, Group: group, RunMode: config.RunModeStream}
+func gtask(name string, commands []string, group string) config.Task {
+	actions := make([]config.Action, len(commands))
+	for i, cmd := range commands {
+		actions[i] = config.Action{Command: cmd}
+	}
+	return config.Task{Name: name, Actions: actions, Group: group, RunMode: config.RunModeStream}
 }
 
 // ── Construction ──────────────────────────────────────────────────────────────
 
 func TestNewGroupModel_BuildsEntries(t *testing.T) {
 	m := NewGroupModel(groupCfg(
-		gcmd("Build", "make build", "CI"),
-		gcmd("Test", "go test", "CI"),
-		gcmd("Deploy", "kubectl apply", "Ops"),
+		gtask("Build", []string{"make build"}, "CI"),
+		gtask("Test", []string{"go test"}, "CI"),
+		gtask("Deploy", []string{"kubectl apply"}, "Ops"),
 	))
 
 	// Expected entries: header(CI), Build, Test, header(Ops), Deploy = 5
@@ -38,22 +42,22 @@ func TestNewGroupModel_BuildsEntries(t *testing.T) {
 	if !m.entries[0].isHeader || m.entries[0].group != "CI" {
 		t.Errorf("entries[0] should be CI header")
 	}
-	if m.entries[1].isHeader || m.entries[1].cmd.Name != "Build" {
-		t.Errorf("entries[1] should be Build cmd")
+	if m.entries[1].isHeader || m.entries[1].task.Name != "Build" {
+		t.Errorf("entries[1] should be Build task")
 	}
-	if m.entries[2].isHeader || m.entries[2].cmd.Name != "Test" {
-		t.Errorf("entries[2] should be Test cmd")
+	if m.entries[2].isHeader || m.entries[2].task.Name != "Test" {
+		t.Errorf("entries[2] should be Test task")
 	}
 	if !m.entries[3].isHeader || m.entries[3].group != "Ops" {
 		t.Errorf("entries[3] should be Ops header")
 	}
-	if m.entries[4].isHeader || m.entries[4].cmd.Name != "Deploy" {
-		t.Errorf("entries[4] should be Deploy cmd")
+	if m.entries[4].isHeader || m.entries[4].task.Name != "Deploy" {
+		t.Errorf("entries[4] should be Deploy task")
 	}
 }
 
 func TestNewGroupModel_EmptyGroupDefaultsToGeneral(t *testing.T) {
-	m := NewGroupModel(groupCfg(cmd("A", "a")))
+	m := NewGroupModel(groupCfg(task("A", []string{"a"})))
 	// entries: header(General), A
 	if len(m.entries) != 2 {
 		t.Fatalf("entries: got %d, want 2", len(m.entries))
@@ -64,7 +68,7 @@ func TestNewGroupModel_EmptyGroupDefaultsToGeneral(t *testing.T) {
 }
 
 func TestNewGroupModel_InitialCursorSkipsHeader(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("Item", "cmd", "Group")))
+	m := NewGroupModel(groupCfg(gtask("Item", []string{"cmd"}, "Group")))
 	// entries[0] = header, entries[1] = Item → cursor should be 1
 	if m.cursor != 1 {
 		t.Errorf("initial cursor: got %d, want 1", m.cursor)
@@ -73,8 +77,8 @@ func TestNewGroupModel_InitialCursorSkipsHeader(t *testing.T) {
 
 func TestNewGroupModel_PreservesGroupOrder(t *testing.T) {
 	m := NewGroupModel(groupCfg(
-		gcmd("Z-first", "z", "Zzz"),
-		gcmd("A-second", "a", "Aaa"),
+		gtask("Z-first", []string{"z"}, "Zzz"),
+		gtask("A-second", []string{"a"}, "Aaa"),
 	))
 	// Groups appear in insertion order: Zzz first, Aaa second
 	headers := []string{}
@@ -106,7 +110,7 @@ func TestGroupModel_Init_ReturnsNil(t *testing.T) {
 
 func TestGroupModel_MoveDownSkipsHeaders(t *testing.T) {
 	// entries: header(A), cmd1, header(B), cmd2
-	m := NewGroupModel(groupCfg(gcmd("cmd1", "c1", "A"), gcmd("cmd2", "c2", "B")))
+	m := NewGroupModel(groupCfg(gtask("cmd1", []string{"c1"}, "A"), gtask("cmd2", []string{"c2"}, "B")))
 	// initial cursor = 1 (cmd1)
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	// cursor should skip header at index 2 and land on cmd2 at index 3
@@ -116,7 +120,7 @@ func TestGroupModel_MoveDownSkipsHeaders(t *testing.T) {
 }
 
 func TestGroupModel_MoveUpSkipsHeaders(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("cmd1", "c1", "A"), gcmd("cmd2", "c2", "B")))
+	m := NewGroupModel(groupCfg(gtask("cmd1", []string{"c1"}, "A"), gtask("cmd2", []string{"c2"}, "B")))
 	// Move to cmd2
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	// Move back up
@@ -127,7 +131,7 @@ func TestGroupModel_MoveUpSkipsHeaders(t *testing.T) {
 }
 
 func TestGroupModel_MoveDown_JKey(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("A", "a", "G"), gcmd("B", "b", "G")))
+	m := NewGroupModel(groupCfg(gtask("A", []string{"a"}, "G"), gtask("B", []string{"b"}, "G")))
 	start := m.cursor
 	m, _ = m.Update(keyMsg("j"))
 	if m.cursor <= start {
@@ -136,7 +140,7 @@ func TestGroupModel_MoveDown_JKey(t *testing.T) {
 }
 
 func TestGroupModel_MoveUp_KKey(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("A", "a", "G"), gcmd("B", "b", "G")))
+	m := NewGroupModel(groupCfg(gtask("A", []string{"a"}, "G"), gtask("B", []string{"b"}, "G")))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	after := m.cursor
 	m, _ = m.Update(keyMsg("k"))
@@ -146,7 +150,7 @@ func TestGroupModel_MoveUp_KKey(t *testing.T) {
 }
 
 func TestGroupModel_CursorDoesNotMoveUpPastFirstItem(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("Only", "cmd", "G")))
+	m := NewGroupModel(groupCfg(gtask("Only", []string{"cmd"}, "G")))
 	initial := m.cursor
 	m, _ = m.Update(arrowMsg(tea.KeyUp))
 	if m.cursor != initial {
@@ -155,11 +159,11 @@ func TestGroupModel_CursorDoesNotMoveUpPastFirstItem(t *testing.T) {
 }
 
 func TestGroupModel_CursorDoesNotMoveDownPastLastItem(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("A", "a", "G"), gcmd("B", "b", "G")))
+	m := NewGroupModel(groupCfg(gtask("A", []string{"a"}, "G"), gtask("B", []string{"b"}, "G")))
 	for i := 0; i < 10; i++ {
 		m, _ = m.Update(arrowMsg(tea.KeyDown))
 	}
-	// Last command entry index
+	// Last task entry index
 	last := len(m.entries) - 1
 	if m.cursor != last {
 		t.Errorf("cursor overshot last item: got %d, want %d", m.cursor, last)
@@ -168,14 +172,14 @@ func TestGroupModel_CursorDoesNotMoveDownPastLastItem(t *testing.T) {
 
 func TestGroupModel_NavigateMultipleGroups(t *testing.T) {
 	m := NewGroupModel(groupCfg(
-		gcmd("A", "a", "G1"),
-		gcmd("B", "b", "G1"),
-		gcmd("C", "c", "G2"),
+		gtask("A", []string{"a"}, "G1"),
+		gtask("B", []string{"b"}, "G1"),
+		gtask("C", []string{"c"}, "G2"),
 	))
 	// Move down twice should get to C (skipping G2 header)
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
-	if m.entries[m.cursor].cmd == nil || m.entries[m.cursor].cmd.Name != "C" {
+	if m.entries[m.cursor].task == nil || m.entries[m.cursor].task.Name != "C" {
 		t.Errorf("expected cursor at C, got cursor=%d entry=%+v", m.cursor, m.entries[m.cursor])
 	}
 }
@@ -183,7 +187,7 @@ func TestGroupModel_NavigateMultipleGroups(t *testing.T) {
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 func TestGroupModel_SelectWithEnter(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("Deploy", "kubectl", "Ops")))
+	m := NewGroupModel(groupCfg(gtask("Deploy", []string{"kubectl"}, "Ops")))
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	sel := m.Selected()
 	if sel == nil {
@@ -195,7 +199,7 @@ func TestGroupModel_SelectWithEnter(t *testing.T) {
 }
 
 func TestGroupModel_SelectWithSpace(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("X", "x", "G")))
+	m := NewGroupModel(groupCfg(gtask("X", []string{"x"}, "G")))
 	m, _ = m.Update(keyMsg(" "))
 	if m.Selected() == nil {
 		t.Error("space should select item")
@@ -203,7 +207,7 @@ func TestGroupModel_SelectWithSpace(t *testing.T) {
 }
 
 func TestGroupModel_SelectSecondCommand(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("First", "f", "G"), gcmd("Second", "s", "G")))
+	m := NewGroupModel(groupCfg(gtask("First", []string{"f"}, "G"), gtask("Second", []string{"s"}, "G")))
 	m, _ = m.Update(arrowMsg(tea.KeyDown))
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	sel := m.Selected()
@@ -236,14 +240,14 @@ func TestGroupModel_WindowSizeUpdate(t *testing.T) {
 // ── View ──────────────────────────────────────────────────────────────────────
 
 func TestGroupModel_ViewContainsTitle(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("A", "a", "G")))
+	m := NewGroupModel(groupCfg(gtask("A", []string{"a"}, "G")))
 	if !strings.Contains(m.View(), "Group Test") {
 		t.Error("view missing title")
 	}
 }
 
 func TestGroupModel_ViewContainsGroupHeaders(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("Build", "make", "CI"), gcmd("Deploy", "kube", "Ops")))
+	m := NewGroupModel(groupCfg(gtask("Build", []string{"make"}, "CI"), gtask("Deploy", []string{"kube"}, "Ops")))
 	v := m.View()
 	if !strings.Contains(v, "CI") {
 		t.Errorf("view missing CI header:\n%s", v)
@@ -254,7 +258,7 @@ func TestGroupModel_ViewContainsGroupHeaders(t *testing.T) {
 }
 
 func TestGroupModel_ViewContainsCommandNames(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("Build", "make", "CI"), gcmd("Deploy", "kube", "Ops")))
+	m := NewGroupModel(groupCfg(gtask("Build", []string{"make"}, "CI"), gtask("Deploy", []string{"kube"}, "Ops")))
 	v := m.View()
 	if !strings.Contains(v, "Build") || !strings.Contains(v, "Deploy") {
 		t.Errorf("view missing command names:\n%s", v)
@@ -262,7 +266,7 @@ func TestGroupModel_ViewContainsCommandNames(t *testing.T) {
 }
 
 func TestGroupModel_ViewContainsCommandStrings(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("Build", "make build", "CI")))
+	m := NewGroupModel(groupCfg(gtask("Build", []string{"make build"}, "CI")))
 	v := m.View()
 	if !strings.Contains(v, "make build") {
 		t.Errorf("view missing command string:\n%s", v)
@@ -270,7 +274,7 @@ func TestGroupModel_ViewContainsCommandStrings(t *testing.T) {
 }
 
 func TestGroupModel_ViewContainsHelpText(t *testing.T) {
-	m := NewGroupModel(groupCfg(gcmd("A", "a", "G")))
+	m := NewGroupModel(groupCfg(gtask("A", []string{"a"}, "G")))
 	v := m.View()
 	if !strings.Contains(v, "navigate") || !strings.Contains(v, "quit") {
 		t.Errorf("view missing help text:\n%s", v)
@@ -278,8 +282,8 @@ func TestGroupModel_ViewContainsHelpText(t *testing.T) {
 }
 
 func TestGroupModel_ViewDescriptionRendered(t *testing.T) {
-	c := config.Command{Name: "X", Description: "my desc", Command: "x", Group: "G", RunMode: config.RunModeStream}
-	m := NewGroupModel(groupCfg(c))
+	tst := config.Task{Name: "X", Description: "my desc", Actions: []config.Action{{Command: "x"}}, Group: "G", RunMode: config.RunModeStream}
+	m := NewGroupModel(groupCfg(tst))
 	v := m.View()
 	if !strings.Contains(v, "my desc") {
 		t.Errorf("view missing description:\n%s", v)

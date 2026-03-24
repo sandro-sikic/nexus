@@ -11,11 +11,11 @@ import (
 
 // helpers ─────────────────────────────────────────────────────────────────────
 
-func fuzzyCfg(cmds ...config.Command) *config.Config {
+func fuzzyCfg(tasks ...config.Task) *config.Config {
 	return &config.Config{
-		Title:    "Fuzzy Test",
-		RunMode:  config.RunModeStream,
-		Commands: cmds,
+		Title:   "Fuzzy Test",
+		RunMode: config.RunModeStream,
+		Tasks:   tasks,
 	}
 }
 
@@ -30,8 +30,8 @@ func backspaceMsg() tea.KeyMsg {
 // ── Construction ──────────────────────────────────────────────────────────────
 
 func TestNewFuzzyModel_InitialState(t *testing.T) {
-	cmds := []config.Command{cmd("Alpha", "a"), cmd("Beta", "b")}
-	m := NewFuzzyModel(fuzzyCfg(cmds...))
+	tasks := []config.Task{cmd("Alpha", "a"), cmd("Beta", "b")}
+	m := NewFuzzyModel(fuzzyCfg(tasks...))
 
 	if m.query != "" {
 		t.Errorf("initial query: got %q, want empty", m.query)
@@ -184,7 +184,7 @@ func TestFuzzyModel_NoMatchShowsEmpty(t *testing.T) {
 }
 
 func TestFuzzyModel_MatchesOnDescription(t *testing.T) {
-	c := config.Command{Name: "Nexus", Description: "executes things", Command: "run", RunMode: config.RunModeStream}
+	c := config.Task{Name: "Nexus", Description: "executes things", Actions: []config.Action{{Command: "run"}}, RunMode: config.RunModeStream}
 	m := NewFuzzyModel(fuzzyCfg(c))
 	m, _ = m.Update(runesMsg("exec"))
 	if len(m.filtered) != 1 {
@@ -193,7 +193,7 @@ func TestFuzzyModel_MatchesOnDescription(t *testing.T) {
 }
 
 func TestFuzzyModel_MatchesOnCommand(t *testing.T) {
-	c := config.Command{Name: "Nexus", Description: "desc", Command: "npm run dev", RunMode: config.RunModeStream}
+	c := config.Task{Name: "Nexus", Description: "desc", Actions: []config.Action{{Command: "npm run dev"}}, RunMode: config.RunModeStream}
 	m := NewFuzzyModel(fuzzyCfg(c))
 	m, _ = m.Update(runesMsg("nrd"))
 	if len(m.filtered) != 1 {
@@ -388,11 +388,11 @@ func TestFuzzyModel_ViewContainsItemNames(t *testing.T) {
 
 func TestFuzzyModel_ViewNeverExceedsTerminalHeight(t *testing.T) {
 	// 20 commands, small terminal: view must fit within the height.
-	var cmds []config.Command
+	var tasks []config.Task
 	for i := 0; i < 20; i++ {
-		cmds = append(cmds, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
+		tasks = append(tasks, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
 	}
-	m := NewFuzzyModel(fuzzyCfg(cmds...))
+	m := NewFuzzyModel(fuzzyCfg(tasks...))
 	for _, h := range []int{12, 15, 24} {
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: h})
 		v := m.View()
@@ -405,11 +405,11 @@ func TestFuzzyModel_ViewNeverExceedsTerminalHeight(t *testing.T) {
 
 func TestFuzzyModel_ViewAlwaysShowsTitleAndSearch(t *testing.T) {
 	// Even on a very small terminal the title and search bar must be present.
-	var cmds []config.Command
+	var tasks []config.Task
 	for i := 0; i < 20; i++ {
-		cmds = append(cmds, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
+		tasks = append(tasks, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
 	}
-	m := NewFuzzyModel(fuzzyCfg(cmds...))
+	m := NewFuzzyModel(fuzzyCfg(tasks...))
 	for _, h := range []int{12, 15, 24} {
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: h})
 		v := m.View()
@@ -423,11 +423,11 @@ func TestFuzzyModel_ViewAlwaysShowsTitleAndSearch(t *testing.T) {
 }
 
 func TestFuzzyModel_ViewAlwaysShowsHelpBar(t *testing.T) {
-	var cmds []config.Command
+	var tasks []config.Task
 	for i := 0; i < 20; i++ {
-		cmds = append(cmds, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
+		tasks = append(tasks, cmd(fmt.Sprintf("Cmd%02d", i), fmt.Sprintf("echo %d", i)))
 	}
-	m := NewFuzzyModel(fuzzyCfg(cmds...))
+	m := NewFuzzyModel(fuzzyCfg(tasks...))
 	for _, h := range []int{12, 15, 24} {
 		m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: h})
 		v := m.View()

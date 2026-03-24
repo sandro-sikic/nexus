@@ -11,26 +11,26 @@ import (
 // ListModel is a simple arrow-key navigable list.
 type ListModel struct {
 	title    string
-	commands []config.Command
+	tasks    []config.Task
 	cursor   int
-	selected *config.Command
+	selected *config.Task
 	width    int
 	height   int
 }
 
 func NewListModel(cfg *config.Config) ListModel {
 	return ListModel{
-		title:    cfg.Title,
-		commands: cfg.Commands,
-		cursor:   0,
-		width:    80,
-		height:   24,
+		title:  cfg.Title,
+		tasks:  cfg.Tasks,
+		cursor: 0,
+		width:  80,
+		height: 24,
 	}
 }
 
 func (m ListModel) Init() tea.Cmd { return nil }
 
-func (m ListModel) Selected() *config.Command { return m.selected }
+func (m ListModel) Selected() *config.Task { return m.selected }
 
 func (m ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -45,13 +45,13 @@ func (m ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(m.commands)-1 {
+			if m.cursor < len(m.tasks)-1 {
 				m.cursor++
 			}
 		case "enter", " ":
-			if len(m.commands) > 0 {
-				cmd := m.commands[m.cursor]
-				m.selected = &cmd
+			if len(m.tasks) > 0 {
+				task := m.tasks[m.cursor]
+				m.selected = &task
 			}
 		}
 	}
@@ -63,26 +63,26 @@ func (m ListModel) View() string {
 
 	b.WriteString(titleStyle.Render(m.title) + "\n\n")
 
-	for i, cmd := range m.commands {
+	for i, task := range m.tasks {
 		cursor := "  "
 		if i == m.cursor {
 			cursor = cursorStyle.Render("▶ ")
 		}
 
-		name := normalStyle.Render(cmd.Name)
+		name := normalStyle.Render(task.Name)
 		if i == m.cursor {
-			name = selectedStyle.Render(cmd.Name)
+			name = selectedStyle.Render(task.Name)
 		}
 
 		line := fmt.Sprintf("%s%s", cursor, name)
-		if cmd.Description != "" {
-			line += "  " + descStyle.Render(cmd.Description)
+		if task.Description != "" {
+			line += "  " + descStyle.Render(task.Description)
 		}
-		steps := cmd.AllSteps()
-		if len(steps) == 1 {
-			line += "\n    " + cmdStyle.Render("$ "+steps[0])
-		} else if len(steps) > 1 {
-			line += "\n    " + cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more steps)", steps[0], len(steps)-1))
+		cmds := task.AllCommands()
+		if len(cmds) == 1 {
+			line += "\n    " + cmdStyle.Render("$ "+cmds[0])
+		} else if len(cmds) > 1 {
+			line += "\n    " + cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more)", cmds[0], len(cmds)-1))
 		}
 		b.WriteString(line + "\n")
 	}

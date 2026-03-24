@@ -10,20 +10,20 @@ import (
 )
 
 // FuzzyModel provides a combined fuzzy-search + group view.
-// When no query is active, commands are displayed grouped by their Group field.
+// When no query is active, tasks are displayed grouped by their Group field.
 // When a query is typed, a flat filtered list is shown instead.
 type FuzzyModel struct {
 	title    string
-	all      []config.Command
-	filtered []config.Command
+	all      []config.Task
+	filtered []config.Task
 	query    string
 	cursor   int
-	selected *config.Command
+	selected *config.Task
 	width    int
 	height   int
 
 	// group view state (used when query is empty)
-	entries []groupEntry // flat: [header, cmd, cmd, header, cmd, ...]
+	entries []groupEntry // flat: [header, task, task, header, task, ...]
 	gCursor int          // cursor index into entries (non-header only)
 
 	// scrollOffset is the index into renderLines() of the first visible line.
@@ -34,24 +34,24 @@ type FuzzyModel struct {
 func NewFuzzyModel(cfg *config.Config) FuzzyModel {
 	m := FuzzyModel{
 		title:  cfg.Title,
-		all:    cfg.Commands,
+		all:    cfg.Tasks,
 		width:  80,
 		height: 24,
 	}
 	m.filtered = m.all
-	m.entries = buildGroupEntries(cfg.Commands)
+	m.entries = buildGroupEntries(cfg.Tasks)
 	m.gCursor = firstCmdEntry(m.entries)
 	return m
 }
 
-// buildGroupEntries constructs a flat slice of groupEntry values from commands.
-func buildGroupEntries(cmds []config.Command) []groupEntry {
+// buildGroupEntries constructs a flat slice of groupEntry values from tasks.
+func buildGroupEntries(tasks []config.Task) []groupEntry {
 	seen := map[string]bool{}
 	var groupOrder []string
-	groupCmds := map[string][]config.Command{}
+	groupTasks := map[string][]config.Task{}
 
-	for _, cmd := range cmds {
-		g := cmd.Group
+	for _, task := range tasks {
+		g := task.Group
 		if g == "" {
 			g = "General"
 		}
@@ -59,15 +59,15 @@ func buildGroupEntries(cmds []config.Command) []groupEntry {
 			seen[g] = true
 			groupOrder = append(groupOrder, g)
 		}
-		groupCmds[g] = append(groupCmds[g], cmd)
+		groupTasks[g] = append(groupTasks[g], task)
 	}
 
 	var entries []groupEntry
 	for _, g := range groupOrder {
 		entries = append(entries, groupEntry{isHeader: true, group: g})
-		for i := range groupCmds[g] {
-			c := groupCmds[g][i]
-			entries = append(entries, groupEntry{cmd: &c})
+		for i := range groupTasks[g] {
+			t := groupTasks[g][i]
+			entries = append(entries, groupEntry{task: &t})
 		}
 	}
 	return entries
@@ -85,7 +85,7 @@ func firstCmdEntry(entries []groupEntry) int {
 
 func (m FuzzyModel) Init() tea.Cmd { return nil }
 
-func (m FuzzyModel) Selected() *config.Command { return m.selected }
+func (m FuzzyModel) Selected() *config.Task { return m.selected }
 
 func fuzzyMatch(query, target string) bool {
 	query = strings.ToLower(query)
@@ -104,19 +104,19 @@ func (m *FuzzyModel) applyFilter() {
 		m.filtered = m.all
 		return
 	}
-	var out []config.Command
-	for _, c := range m.all {
-		matched := fuzzyMatch(m.query, c.Name) || fuzzyMatch(m.query, c.Description)
+	var out []config.Task
+	for _, t := range m.all {
+		matched := fuzzyMatch(m.query, t.Name) || fuzzyMatch(m.query, t.Description)
 		if !matched {
-			for _, step := range c.AllSteps() {
-				if fuzzyMatch(m.query, step) {
+			for _, cmd := range t.AllCommands() {
+				if fuzzyMatch(m.query, cmd) {
 					matched = true
 					break
 				}
 			}
 		}
 		if matched {
-			out = append(out, c)
+			out = append(out, t)
 		}
 	}
 	m.filtered = out
@@ -247,12 +247,12 @@ func (m FuzzyModel) Update(msg tea.Msg) (FuzzyModel, tea.Cmd) {
 		case tea.KeyEnter:
 			if filtering {
 				if len(m.filtered) > 0 {
-					cmd := m.filtered[m.cursor]
-					m.selected = &cmd
+					task := m.filtered[m.cursor]
+					m.selected = &task
 				}
 			} else {
 				if m.gCursor < len(m.entries) && !m.entries[m.gCursor].isHeader {
-					m.selected = m.entries[m.gCursor].cmd
+					m.selected = m.entries[m.gCursor].task
 				}
 			}
 		case tea.KeyRunes:
@@ -264,7 +264,7 @@ func (m FuzzyModel) Update(msg tea.Msg) (FuzzyModel, tea.Cmd) {
 		// Space selects in group mode (when not filtering)
 		if msg.Type == tea.KeySpace && !filtering {
 			if m.gCursor < len(m.entries) && !m.entries[m.gCursor].isHeader {
-				m.selected = m.entries[m.gCursor].cmd
+				m.selected = m.entries[m.gCursor].task
 			}
 		}
 	}
@@ -281,25 +281,25 @@ func (m FuzzyModel) renderLines() []string {
 		if len(m.filtered) == 0 {
 			lines = append(lines, descStyle.Render("  no matches"))
 		}
-		for i, cmd := range m.filtered {
+		for i, task := range m.filtered {
 			cursor := "  "
 			if i == m.cursor {
 				cursor = cursorStyle.Render("▶ ")
 			}
-			name := normalStyle.Render(cmd.Name)
+			name := normalStyle.Render(task.Name)
 			if i == m.cursor {
-				name = selectedStyle.Render(cmd.Name)
+				name = selectedStyle.Render(task.Name)
 			}
 			line := fmt.Sprintf("%s%s", cursor, name)
-			if cmd.Description != "" {
-				line += "  " + descStyle.Render(cmd.Description)
+			if task.Description != "" {
+				line += "  " + descStyle.Render(task.Description)
 			}
 			lines = append(lines, line)
-			steps := cmd.AllSteps()
-			if len(steps) == 1 {
-				lines = append(lines, "    "+cmdStyle.Render("$ "+steps[0]))
-			} else if len(steps) > 1 {
-				lines = append(lines, "    "+cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more steps)", steps[0], len(steps)-1)))
+			cmds := task.AllCommands()
+			if len(cmds) == 1 {
+				lines = append(lines, "    "+cmdStyle.Render("$ "+cmds[0]))
+			} else if len(cmds) > 1 {
+				lines = append(lines, "    "+cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more)", cmds[0], len(cmds)-1)))
 			}
 		}
 	} else {
@@ -317,20 +317,20 @@ func (m FuzzyModel) renderLines() []string {
 			if i == m.gCursor {
 				cursor = cursorStyle.Render("▶ ")
 			}
-			name := normalStyle.Render(e.cmd.Name)
+			name := normalStyle.Render(e.task.Name)
 			if i == m.gCursor {
-				name = selectedStyle.Render(e.cmd.Name)
+				name = selectedStyle.Render(e.task.Name)
 			}
 			line := fmt.Sprintf("  %s%s", cursor, name)
-			if e.cmd.Description != "" {
-				line += "  " + descStyle.Render(e.cmd.Description)
+			if e.task.Description != "" {
+				line += "  " + descStyle.Render(e.task.Description)
 			}
 			lines = append(lines, line)
-			steps := e.cmd.AllSteps()
-			if len(steps) == 1 {
-				lines = append(lines, "      "+cmdStyle.Render("$ "+steps[0]))
-			} else if len(steps) > 1 {
-				lines = append(lines, "      "+cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more steps)", steps[0], len(steps)-1)))
+			cmds := e.task.AllCommands()
+			if len(cmds) == 1 {
+				lines = append(lines, "      "+cmdStyle.Render("$ "+cmds[0]))
+			} else if len(cmds) > 1 {
+				lines = append(lines, "      "+cmdStyle.Render(fmt.Sprintf("$ %s  (+%d more)", cmds[0], len(cmds)-1)))
 			}
 		}
 	}
@@ -345,12 +345,12 @@ func (m FuzzyModel) cursorLine() int {
 		// Each item takes 1 or 2 rendered lines (name + optional cmd line).
 		// Walk the filtered list to find the line index of the selected item.
 		line := 0
-		for i, cmd := range m.filtered {
+		for i, task := range m.filtered {
 			if i == m.cursor {
 				return line
 			}
 			line++ // name line
-			if len(cmd.AllSteps()) > 0 {
+			if len(task.AllCommands()) > 0 {
 				line++ // cmd preview line
 			}
 		}
@@ -379,7 +379,7 @@ func (m FuzzyModel) cursorLine() int {
 			line++ // consume header line
 		} else {
 			line++ // consume name line
-			if len(e.cmd.AllSteps()) > 0 {
+			if len(e.task.AllCommands()) > 0 {
 				line++ // consume preview line
 			}
 		}

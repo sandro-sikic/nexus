@@ -18,9 +18,9 @@ type outputLineMsg runner.LogLine
 // outputDoneMsg signals the process has finished.
 type outputDoneMsg struct{ err error }
 
-// OutputModel streams command output inside the TUI.
+// OutputModel streams task output inside the TUI.
 type OutputModel struct {
-	cmd     config.Command
+	task    config.Task
 	lines   []runner.LogLine
 	done    bool
 	err     error
@@ -30,11 +30,11 @@ type OutputModel struct {
 	spinner spinner.Model
 }
 
-func NewOutputModel(cmd config.Command) OutputModel {
+func NewOutputModel(task config.Task) OutputModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	return OutputModel{cmd: cmd, width: 80, height: 24, spinner: s}
+	return OutputModel{task: task, width: 80, height: 24, spinner: s}
 }
 
 func (m OutputModel) Init() tea.Cmd {
@@ -44,15 +44,9 @@ func (m OutputModel) Init() tea.Cmd {
 func (m OutputModel) startStream() tea.Cmd {
 	return func() tea.Msg {
 		lines := make(chan runner.LogLine, 64)
-		// Use StreamWithBackground if the command has steps with background flag
-		if m.cmd.HasBackgroundSteps() {
-			if err := runner.StreamWithBackground(m.cmd, lines); err != nil {
-				return outputDoneMsg{err: err}
-			}
-		} else {
-			if err := runner.Stream(m.cmd, lines); err != nil {
-				return outputDoneMsg{err: err}
-			}
+		// Stream handles both foreground and background actions
+		if err := runner.Stream(m.task, lines); err != nil {
+			return outputDoneMsg{err: err}
 		}
 		// Drain first line to kick things off; subsequent lines polled via tickCmd.
 		// We return the channel via a wrapper so we can read it in Update.
@@ -131,30 +125,25 @@ func (m OutputModel) Update(msg tea.Msg) (OutputModel, tea.Cmd) {
 func (m OutputModel) View() string {
 	var b strings.Builder
 
-	header := titleStyle.Render(fmt.Sprintf("Running: %s", m.cmd.Name))
+	header := titleStyle.Render(fmt.Sprintf("Running: %s", m.task.Name))
 	b.WriteString(header + "\n")
 
-	// Check if using the new Steps format with background support
-	if len(m.cmd.Steps) > 0 {
-		for i, step := range m.cmd.Steps {
+	// Show actions list
+	if len(m.task.Actions) == 1 {
+		// Single action: show simple format without numbering
+		action := m.task.Actions[0]
+		b.WriteString(cmdStyle.Render(fmt.Sprintf("  $ %s", action.Command)) + "\n")
+	} else {
+		// Multiple actions: show numbered steps
+		for i, action := range m.task.Actions {
 			prefix := "  "
-			if step.Background {
+			if action.Background {
 				prefix = "[BG]"
 			}
-			b.WriteString(cmdStyle.Render(fmt.Sprintf("%s [%d] $ %s", prefix, i+1, step.Command)) + "\n")
-		}
-		b.WriteString("\n")
-	} else {
-		steps := m.cmd.AllSteps()
-		if len(steps) == 1 {
-			b.WriteString(cmdStyle.Render("$ "+steps[0]) + "\n\n")
-		} else {
-			for i, step := range steps {
-				b.WriteString(cmdStyle.Render(fmt.Sprintf("  [%d] $ %s", i+1, step)) + "\n")
-			}
-			b.WriteString("\n")
+			b.WriteString(cmdStyle.Render(fmt.Sprintf("%s [%d] $ %s", prefix, i+1, action.Command)) + "\n")
 		}
 	}
+	b.WriteString("\n")
 
 	visible := m.height - 6
 	if visible < 1 {
@@ -191,7 +180,7 @@ func (m OutputModel) View() string {
 
 // BackgroundModel shows a background process log panel.
 type BackgroundModel struct {
-	cmd     config.Command
+	task    config.Task
 	proc    *runner.BackgroundProc
 	lines   []runner.LogLine
 	done    bool
@@ -202,8 +191,8 @@ type BackgroundModel struct {
 	spinner spinner.Model
 }
 
-func NewBackgroundModel(cmd config.Command) (BackgroundModel, error) {
-	proc, err := runner.RunBackground(cmd)
+func NewBackgroundModel(task config.Task) (BackgroundModel, error) {
+	proc, err := runner.RunBackground(task)
 	if err != nil {
 		return BackgroundModel{}, err
 	}
@@ -211,7 +200,7 @@ func NewBackgroundModel(cmd config.Command) (BackgroundModel, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	return BackgroundModel{
-		cmd:     cmd,
+		task:    task,
 		proc:    proc,
 		width:   80,
 		height:  24,
@@ -287,13 +276,13 @@ func (m BackgroundModel) View() string {
 		status = "done"
 	}
 
-	b.WriteString(titleStyle.Render(fmt.Sprintf("[BG] %s (%s)", m.cmd.Name, status)) + "\n")
-	steps := m.cmd.AllSteps()
-	if len(steps) == 1 {
-		b.WriteString(cmdStyle.Render("$ "+steps[0]) + "\n\n")
+	b.WriteString(titleStyle.Render(fmt.Sprintf("[BG] %s (%s)", m.task.Name, status)) + "\n")
+	cmds := m.task.AllCommands()
+	if len(cmds) == 1 {
+		b.WriteString(cmdStyle.Render("$ "+cmds[0]) + "\n\n")
 	} else {
-		for i, step := range steps {
-			b.WriteString(cmdStyle.Render(fmt.Sprintf("  [%d] $ %s", i+1, step)) + "\n")
+		for i, cmd := range cmds {
+			b.WriteString(cmdStyle.Render(fmt.Sprintf("  [%d] $ %s", i+1, cmd)) + "\n")
 		}
 		b.WriteString("\n")
 	}
