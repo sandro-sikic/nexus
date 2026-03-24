@@ -58,6 +58,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			if m.state == stateMenu {
 				m.quitting = true
+				// Kill all running processes before quitting
+				runner.GetGlobalRegistry().KillAll()
 				return m, tea.Quit
 			}
 			// In output/bg state, go back to menu

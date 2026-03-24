@@ -38,6 +38,7 @@ func buildCmdFromShell(shellCmd string, dir string) *exec.Cmd {
 		c = newWindowsCmd(shellCmd)
 	} else {
 		c = exec.Command("sh", "-c", shellCmd)
+		setProcessGroup(c) // Set up process group for Unix
 	}
 	if dir != "" {
 		c.Dir = dir
@@ -56,12 +57,21 @@ func Handoff(task config.Task) error {
 
 	// Track background processes
 	var bgProcs []*BackgroundProc
+	// Track foreground processes for cleanup
+	var fgCmds []*exec.Cmd
 
 	for i, action := range task.Actions {
 		if action.Background {
 			// Start in background but don't block
 			bp, err := runBackgroundAction(action.Command, task.Dir, nil)
 			if err != nil {
+				// Cleanup any already started processes
+				for _, cmd := range fgCmds {
+					killProcess(cmd)
+				}
+				for _, bp := range bgProcs {
+					killProcess(bp.Cmd)
+				}
 				return fmt.Errorf("action %d/%d background %q: %w", i+1, len(task.Actions), action.Command, err)
 			}
 			bgProcs = append(bgProcs, bp)
@@ -71,9 +81,16 @@ func Handoff(task config.Task) error {
 			c.Stdin = os.Stdin
 			c.Stdout = os.Stdout
 			c.Stderr = os.Stderr
+
+			// Register the process
+			GetGlobalRegistry().Register(c)
+			fgCmds = append(fgCmds, c)
+
 			if err := c.Run(); err != nil {
+				GetGlobalRegistry().Unregister(c)
 				return fmt.Errorf("action %d/%d %q: %w", i+1, len(task.Actions), action.Command, err)
 			}
+			GetGlobalRegistry().Unregister(c)
 		}
 	}
 
@@ -177,6 +194,11 @@ func HandoffLastAction(task config.Task) error {
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
+
+	// Register the process
+	GetGlobalRegistry().Register(c)
+	defer GetGlobalRegistry().Unregister(c)
+
 	return c.Run()
 }
 
@@ -195,6 +217,10 @@ func streamOne(c *exec.Cmd, lines chan LogLine) error {
 	if err := c.Start(); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
+
+	// Register the process with the global registry
+	GetGlobalRegistry().Register(c)
+	defer GetGlobalRegistry().Unregister(c)
 
 	var wg sync.WaitGroup
 	scanLines := func(r interface{ Read([]byte) (int, error) }, isErr bool) {
@@ -275,17 +301,23 @@ func RunBackground(task config.Task) (*BackgroundProc, error) {
 					c = buildCmdFromShell(action.Command, task.Dir)
 				}
 
+				// Register the process
+				GetGlobalRegistry().Register(c)
+
 				stdout, err := c.StdoutPipe()
 				if err != nil {
+					GetGlobalRegistry().Unregister(c)
 					lines <- LogLine{Text: fmt.Sprintf("error: stdout pipe: %v", err), IsErr: true}
 					return
 				}
 				stderr, err := c.StderrPipe()
 				if err != nil {
+					GetGlobalRegistry().Unregister(c)
 					lines <- LogLine{Text: fmt.Sprintf("error: stderr pipe: %v", err), IsErr: true}
 					return
 				}
 				if err := c.Start(); err != nil {
+					GetGlobalRegistry().Unregister(c)
 					lines <- LogLine{Text: fmt.Sprintf("error: start: %v", err), IsErr: true}
 					return
 				}
@@ -305,12 +337,14 @@ func RunBackground(task config.Task) (*BackgroundProc, error) {
 				wg.Wait()
 
 				if err := c.Wait(); err != nil {
+					GetGlobalRegistry().Unregister(c)
 					lines <- LogLine{
 						Text:  fmt.Sprintf("error: action %d/%d %q: %v", i+1, len(task.Actions), action.Command, err),
 						IsErr: true,
 					}
 					return
 				}
+				GetGlobalRegistry().Unregister(c)
 			}
 		}
 
@@ -341,6 +375,9 @@ func runBackgroundAction(shellCmd, dir string, lines chan LogLine) (*BackgroundP
 		return nil, fmt.Errorf("start: %w", err)
 	}
 
+	// Register the process with the global registry
+	GetGlobalRegistry().Register(c)
+
 	done := make(chan struct{})
 	bp := &BackgroundProc{
 		Cmd:   c,
@@ -351,6 +388,8 @@ func runBackgroundAction(shellCmd, dir string, lines chan LogLine) (*BackgroundP
 	go func() {
 		defer func() {
 			bp.once.Do(func() { close(done) })
+			// Unregister when done
+			GetGlobalRegistry().Unregister(c)
 		}()
 
 		var wg sync.WaitGroup

@@ -5,12 +5,18 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"nexus/config"
+	"nexus/runner"
 	"nexus/ui"
 )
 
 func main() {
+	// Setup signal handling to cleanup processes on exit
+	setupSignalHandling()
+
 	cfgPath := flag.String("config", "nexus.yaml", "path to nexus config file")
 	wizard := flag.Bool("wizard", false, "open the setup/edit wizard before launching")
 	flag.Parse()
@@ -78,4 +84,22 @@ func main() {
 		fmt.Fprintf(os.Stderr, "nexus: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// setupSignalHandling registers signal handlers to cleanup processes on exit.
+func setupSignalHandling() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	go func() {
+		sig := <-sigChan
+		fmt.Fprintf(os.Stderr, "\nnexus: received signal %v, cleaning up...\n", sig)
+
+		// Kill all registered processes
+		if err := runner.GetGlobalRegistry().KillAll(); err != nil {
+			fmt.Fprintf(os.Stderr, "nexus: error killing processes: %v\n", err)
+		}
+
+		os.Exit(1)
+	}()
 }
