@@ -63,11 +63,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			// In output/bg state, go back to menu
+			// Kill all running processes when exiting the task
+			runner.GetGlobalRegistry().KillAll()
 			m.state = stateMenu
 			m.fuzzy.selected = nil
 			return m, nil
 		case "esc":
 			if m.state != stateMenu {
+				// Kill all running processes when exiting the task
+				runner.GetGlobalRegistry().KillAll()
 				m.state = stateMenu
 				m.fuzzy.selected = nil
 				return m, nil

@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"fmt"
 	"os/exec"
+	"strconv"
 	"syscall"
 )
 
@@ -25,14 +27,17 @@ func killProcess(cmd *exec.Cmd) error {
 		return nil
 	}
 
+	pid := strconv.Itoa(cmd.Process.Pid)
+
 	// Use taskkill to kill the process tree
-	killCmd := exec.Command("taskkill", "/F", "/T", "/PID", string(rune(cmd.Process.Pid)))
-	killCmd.Run()
+	killCmd := exec.Command("taskkill", "/F", "/T", "/PID", pid)
+	if err := killCmd.Run(); err != nil {
+		// Taskkill failed, try direct kill
+		fmt.Fprintf(cmd.Stderr, "taskkill failed: %v, trying direct kill\n", err)
+	}
 
 	// Also try direct kill
-	cmd.Process.Kill()
-
-	return nil
+	return cmd.Process.Kill()
 }
 
 // setProcessGroup is a no-op on Windows since we handle it in newWindowsCmd.

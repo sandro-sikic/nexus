@@ -8,6 +8,7 @@ package runner
 import (
 	"os/exec"
 	"syscall"
+	"time"
 )
 
 func newWindowsCmd(_ string) *exec.Cmd {
@@ -22,25 +23,26 @@ func killProcess(cmd *exec.Cmd) error {
 		return nil
 	}
 
+	pid := cmd.Process.Pid
+
 	// Kill the process group (negative PID)
 	// This ensures child processes spawned by the shell are also killed
-	pgid, err := syscall.Getpgid(cmd.Process.Pid)
+	pgid, err := syscall.Getpgid(pid)
 	if err == nil {
-		// Kill the entire process group
+		// Send SIGTERM to the entire process group first
 		syscall.Kill(-pgid, syscall.SIGTERM)
+		// Give it a moment to terminate gracefully
+		time.Sleep(100 * time.Millisecond)
+		// Force kill the entire process group
+		syscall.Kill(-pgid, syscall.SIGKILL)
 	}
 
 	// Also try to kill the process directly
 	cmd.Process.Signal(syscall.SIGTERM)
+	time.Sleep(100 * time.Millisecond)
 
-	// Give it a moment to terminate gracefully, then force kill if needed
-	go func() {
-		// Wait a bit then force kill if still running
-		// This is done in a goroutine to not block
-		// The actual cleanup will be handled by the registry
-	}()
-
-	return nil
+	// Force kill if still running
+	return cmd.Process.Kill()
 }
 
 // setProcessGroup sets up the process to run in its own process group.
